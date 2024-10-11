@@ -1,0 +1,23 @@
+[package]
+name = "raft-log"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byteorder = { version = "1.5.0" }
+codeq = { version = "0.3.0" }
+fs2 = "0.4.3"
+thiserror = { version = "1.0.64" }
+log = "0.4.22"
+clap = { version = "4.5.20", features = ["derive"] }
+
+
+[dev-dependencies]
+tempfile = { version = "3.4.0" }
+pretty_assertions = "1.4.1"
+indoc = "2"
+
+
+[[bin]]
+name = "raft-log-dump"
+path = "src/bin/dump.rs"

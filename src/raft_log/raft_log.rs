@@ -1,0 +1,281 @@
+use std::collections::BTreeMap;
+use std::io;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use codeq::OffsetSize;
+use codeq::Segment;
+
+use crate::api::raft_log_writer::RaftLogWriter;
+use crate::api::state_machine::StateMachine;
+use crate::api::wal::WAL;
+use crate::chunk::closed_chunk::ClosedChunk;
+use crate::chunk::open_chunk::OpenChunk;
+use crate::chunk::Chunk;
+use crate::errors::LogIndexNotFound;
+use crate::errors::RaftLogStateError;
+use crate::file_lock;
+use crate::num::format_pad_u64;
+use crate::raft_log::access_state::AccessStat;
+use crate::raft_log::dump::Dump;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::raft_log::state_machine::RaftLogStateMachine;
+use crate::raft_log::wal::RaftLogWAL;
+use crate::ChunkId;
+use crate::Config;
+use crate::Types;
+use crate::WALRecord;
+
+#[derive(Debug)]
+pub struct RaftLog<T: Types> {
+    pub(crate) config: Arc<Config>,
+
+    /// Acquire the dir exclusive lock when writing to the log.
+    _dir_lock: file_lock::FileLock,
+
+    pub(crate) wal: RaftLogWAL<T>,
+
+    pub(crate) state_machine: RaftLogStateMachine<T>,
+
+    state: AccessStat,
+}
+
+impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
+    fn save_vote(&mut self, vote: T::Vote) -> Result<Segment, io::Error> {
+        let record = WALRecord::SaveVote(vote.clone());
+        self.append_and_apply(&record)
+    }
+
+    fn append<I>(&mut self, entries: I) -> Result<Segment, io::Error>
+    where I: IntoIterator<Item = (T::LogId, T::LogPayload)> {
+        for (log_id, payload) in entries {
+            let record = WALRecord::Append(log_id, payload);
+            self.append_and_apply(&record)?;
+        }
+        Ok(self.wal.last_segment())
+    }
+
+    /// Truncate at `index`, keep the record before `index`.
+    fn truncate(&mut self, index: u64) -> Result<Segment, io::Error> {
+        let purged = self.log_state().purged.as_ref();
+
+        let log_id = if index == T::next_log_index(purged) {
+            purged.cloned()
+        } else {
+            let log_id = self.get_log_id(index - 1)?;
+            Some(log_id)
+        };
+
+        let record = WALRecord::TruncateAfter(log_id);
+        self.append_and_apply(&record)
+    }
+
+    fn purge(&mut self, index: u64) -> Result<Segment, io::Error> {
+        // NOTE that only when the purge record is committed, the chunk file can
+        // be removed.
+
+        let purged = self.log_state().purged.as_ref();
+
+        let log_id = if let Some(purged) = purged {
+            if index == T::get_log_index(purged) {
+                return Ok(self.wal.last_segment());
+            } else {
+                self.get_log_id(index)?
+            }
+        } else {
+            self.get_log_id(index)?
+        };
+
+        let record = WALRecord::PurgeUpto(log_id.clone());
+        let res = self.append_and_apply(&record)?;
+
+        // After commit purge record,
+        // remove the closed chunks that are purged.
+
+        while let Some((_chunk_id, closed)) = self.wal.closed.first_key_value()
+        {
+            if closed.state.last.as_ref() > Some(&log_id) {
+                break;
+            }
+            let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();
+            let path = self.config.chunk_path(chunk_id);
+            std::fs::remove_file(path)?;
+        }
+
+        Ok(res)
+    }
+
+    fn commit(&mut self, log_id: T::LogId) -> Result<Segment, io::Error> {
+        let record = WALRecord::Commit(log_id);
+        self.append_and_apply(&record)
+    }
+
+    fn flush(&mut self, callback: T::Callback) -> Result<(), io::Error> {
+        self.wal.send_flush(callback)?;
+
+        Ok(())
+    }
+}
+
+impl<T: Types> RaftLog<T> {
+    pub fn dump(config: Arc<Config>) -> Dump<T> {
+        Dump::new(config)
+    }
+
+    pub fn config(&self) -> &Config {
+        self.config.as_ref()
+    }
+
+    pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
+        let dir_lock = file_lock::FileLock::new(config.clone())?;
+
+        let offsets = Self::load_chunk_ids(&config)?;
+
+        let mut sm = RaftLogStateMachine::new(&config);
+        let mut closed = BTreeMap::new();
+        let mut prev_end_offset = None;
+
+        for chunk_id in offsets {
+            if let Some(prev_end) = prev_end_offset {
+                if prev_end != chunk_id.offset() {
+                    let message = format!(
+                        "Gap between chunks: {} -> {}; Can not open, \
+                        fix this error and re-open",
+                        format_pad_u64(prev_end),
+                        format_pad_u64(chunk_id.offset()),
+                    );
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        message,
+                    ));
+                }
+            }
+
+            let (chunk, records) = Chunk::open(config.clone(), chunk_id)?;
+
+            prev_end_offset = Some(chunk.last_segment().end());
+
+            for (i, record) in records.into_iter().enumerate() {
+                let start = chunk.global_offsets[i];
+                let end = chunk.global_offsets[i + 1];
+                let seg = Segment::new(start, end - start);
+                sm.apply(&record, chunk_id, seg)?;
+            }
+
+            closed.insert(
+                chunk_id,
+                ClosedChunk::new(chunk, sm.log_state.clone()),
+            );
+        }
+
+        let open = OpenChunk::create(
+            config.clone(),
+            ChunkId(prev_end_offset.unwrap_or_default()),
+            WALRecord::State(sm.log_state.clone()),
+        )?;
+
+        let s = Self {
+            config: config.clone(),
+            _dir_lock: dir_lock,
+            state_machine: sm,
+            wal: RaftLogWAL::new(config, closed, open),
+            state: Default::default(),
+        };
+
+        Ok(s)
+    }
+
+    pub fn load_chunk_ids(config: &Config) -> Result<Vec<ChunkId>, io::Error> {
+        let path = &config.dir;
+        let entries = std::fs::read_dir(path)?;
+        let mut chunk_ids = vec![];
+        for entry in entries {
+            let entry = entry?;
+            let file_name = entry.file_name();
+
+            let fn_str = file_name.to_string_lossy();
+            let res = Config::parse_chunk_file_name(&fn_str);
+
+            match res {
+                Ok(offset) => {
+                    chunk_ids.push(ChunkId(offset));
+                }
+                Err(err) => {
+                    log::warn!(
+                        "Ignore invalid WAL file name: '{}': {}",
+                        fn_str,
+                        err
+                    );
+                    continue;
+                }
+            };
+        }
+
+        chunk_ids.sort();
+
+        Ok(chunk_ids)
+    }
+
+    pub fn read(
+        &self,
+        from: u64,
+        to: u64,
+    ) -> impl Iterator<Item = Result<(T::LogId, T::LogPayload), io::Error>> + '_
+    {
+        self.state_machine.log.range(from..to).map(|(_, log_data)| {
+            let log_id = log_data.log_id.clone();
+
+            let payload = self.state_machine.payload_cache.get(&log_id);
+
+            let payload = if let Some(payload) = payload {
+                self.state.cache_hit.fetch_add(1, Ordering::Relaxed);
+                payload
+            } else {
+                self.state.cache_miss.fetch_add(1, Ordering::Relaxed);
+                self.wal.load_log_payload(log_data)?
+            };
+
+            Ok((log_id, payload))
+        })
+    }
+
+    pub fn log_state(&self) -> &RaftLogState<T> {
+        &self.state_machine.log_state
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn log_state_mut(&mut self) -> &mut RaftLogState<T> {
+        &mut self.state_machine.log_state
+    }
+
+    pub fn access_stat(&self) -> &AccessStat {
+        &self.state
+    }
+
+    fn get_log_id(&self, index: u64) -> Result<T::LogId, RaftLogStateError<T>> {
+        let entry = self
+            .state_machine
+            .log
+            .get(&index)
+            .ok_or_else(|| LogIndexNotFound::new(index))?;
+        Ok(entry.log_id.clone())
+    }
+
+    fn append_and_apply(
+        &mut self,
+        rec: &WALRecord<T>,
+    ) -> Result<Segment, io::Error> {
+        WAL::append(&mut self.wal, rec)?;
+        StateMachine::apply(
+            &mut self.state_machine,
+            rec,
+            self.wal.open.chunk.chunk_id(),
+            self.wal.last_segment(),
+        )?;
+
+        self.wal
+            .try_close_full_chunk(|| self.state_machine.log_state.clone())?;
+
+        Ok(self.wal.last_segment())
+    }
+}

@@ -1,0 +1,25 @@
+use std::fmt::Debug;
+
+use codeq::Codec;
+
+use crate::raft_log::wal::callback::Callback;
+
+pub trait Types
+where Self: Debug + Default + PartialEq + Eq + Clone + 'static
+{
+    type LogId: Debug + Clone + Ord + Eq + Codec + 'static;
+    type LogPayload: Debug + Clone + Codec + 'static;
+    type Vote: Debug + Clone + PartialOrd + Eq + Codec + 'static;
+    type Callback: Debug + Callback + Send + 'static;
+
+    fn get_log_index(log_id: &Self::LogId) -> u64;
+
+    fn payload_size(payload: &Self::LogPayload) -> u64;
+
+    fn next_log_index(log_id: Option<&Self::LogId>) -> u64 {
+        match log_id {
+            Some(log_id) => Self::get_log_index(log_id) + 1,
+            None => 0,
+        }
+    }
+}
