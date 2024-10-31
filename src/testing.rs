@@ -20,7 +20,9 @@ impl Types for TestTypes {
 
     type Callback = std::sync::mpsc::SyncSender<Result<(), io::Error>>;
 
-    fn get_log_index(log_id: &Self::LogId) -> u64 {
+    type UserData = String;
+
+    fn log_index(log_id: &Self::LogId) -> u64 {
         log_id.1
     }
 

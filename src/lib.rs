@@ -15,6 +15,7 @@ pub use api::types::Types;
 pub use chunk::chunk_id::ChunkId;
 pub use codeq::Segment;
 pub use config::Config;
+pub use raft_log::wal::callback::Callback;
 
 pub use self::raft_log::raft_log::RaftLog;
 pub use self::raft_log::wal::wal_record::WALRecord;

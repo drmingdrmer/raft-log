@@ -48,7 +48,7 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
             WALRecord::SaveVote(_vote) => {}
             WALRecord::Append(log_id, payload) => {
                 self.log.insert(
-                    T::get_log_index(log_id),
+                    T::log_index(log_id),
                     LogData::new(log_id.clone(), chunk_id, segment),
                 );
                 self.payload_cache.insert(log_id.clone(), payload.clone());

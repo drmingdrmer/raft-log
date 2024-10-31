@@ -101,9 +101,9 @@ where T: Types
     }
 
     pub(crate) fn is_open_chunk_full(&self) -> bool {
-        self.open.chunk.records_count() >= self.config.max_records()
+        self.open.chunk.records_count() >= self.config.chunk_max_records()
             || (self.open.chunk.last_segment().end() as usize)
-                >= self.config.max_size()
+                >= self.config.chunk_max_size()
     }
 
     pub(crate) fn try_close_full_chunk(

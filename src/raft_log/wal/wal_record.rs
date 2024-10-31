@@ -185,6 +185,7 @@ mod tests {
             last: Some((2, 3)),
             committed: Some((4, 5)),
             purged: Some((6, 7)),
+            user_data: Some(ss("hello")),
         });
 
         let b = vec![
@@ -201,7 +202,10 @@ mod tests {
             1, // Some
             0, 0, 0, 0, 0, 0, 0, 6, // purged.term
             0, 0, 0, 0, 0, 0, 0, 7, // purged.index
-            0, 0, 0, 0, 11, 185, 117, 242, // checksum
+            1, // Some
+            0, 0, 0, 5, // user_data.len
+            104, 101, 108, 108, 111, // user_data
+            0, 0, 0, 0, 201, 132, 128, 40, // checksum
         ];
 
         test_codec(&b, &rec)

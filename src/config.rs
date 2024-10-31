@@ -6,17 +6,18 @@ use crate::ChunkId;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
-    pub(crate) dir: String,
+    pub dir: String,
 
-    pub(crate) log_cache_max_items: Option<usize>,
-    pub(crate) log_cache_capacity: Option<usize>,
+    pub log_cache_max_items: Option<usize>,
 
-    pub(crate) read_buffer_size: Option<usize>,
+    pub log_cache_capacity: Option<usize>,
+
+    pub read_buffer_size: Option<usize>,
 
     /// Maximum number of records in a chunk.
-    pub(crate) max_records: Option<usize>,
+    pub chunk_max_records: Option<usize>,
 
-    pub(crate) max_size: Option<usize>,
+    pub chunk_max_size: Option<usize>,
 
     /// Whether to truncate the last half sync-ed record.
     pub(crate) truncate_incomplete_record: Option<bool>,
@@ -42,12 +43,12 @@ impl Config {
         self.read_buffer_size.unwrap_or(64 * 1024 * 1024)
     }
 
-    pub fn max_records(&self) -> usize {
-        self.max_records.unwrap_or(1024 * 1024)
+    pub fn chunk_max_records(&self) -> usize {
+        self.chunk_max_records.unwrap_or(1024 * 1024)
     }
 
-    pub fn max_size(&self) -> usize {
-        self.max_size.unwrap_or(1024 * 1024 * 1024)
+    pub fn chunk_max_size(&self) -> usize {
+        self.chunk_max_size.unwrap_or(1024 * 1024 * 1024)
     }
 
     pub fn truncate_incomplete_record(&self) -> bool {

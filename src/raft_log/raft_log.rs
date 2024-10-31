@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
+use std::io::Error;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -41,6 +42,16 @@ pub struct RaftLog<T: Types> {
 }
 
 impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
+    fn save_user_data(
+        &mut self,
+        user_data: Option<T::UserData>,
+    ) -> Result<Segment, Error> {
+        let mut state = self.log_state().clone();
+        state.user_data = user_data;
+        let record = WALRecord::State(state);
+        self.append_and_apply(&record)
+    }
+
     fn save_vote(&mut self, vote: T::Vote) -> Result<Segment, io::Error> {
         let record = WALRecord::SaveVote(vote.clone());
         self.append_and_apply(&record)
@@ -77,7 +88,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         let purged = self.log_state().purged.as_ref();
 
         let log_id = if let Some(purged) = purged {
-            if index == T::get_log_index(purged) {
+            if index == T::log_index(purged) {
                 return Ok(self.wal.last_segment());
             } else {
                 self.get_log_id(index)?

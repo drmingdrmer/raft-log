@@ -14,6 +14,8 @@ pub struct RaftLogState<T: Types> {
     pub(crate) last: Option<T::LogId>,
     pub(crate) committed: Option<T::LogId>,
     pub(crate) purged: Option<T::LogId>,
+
+    pub(crate) user_data: Option<T::UserData>,
 }
 
 impl<T: Types> codeq::Encode for RaftLogState<T> {
@@ -24,6 +26,7 @@ impl<T: Types> codeq::Encode for RaftLogState<T> {
         n += self.last.encode(&mut w)?;
         n += self.committed.encode(&mut w)?;
         n += self.purged.encode(&mut w)?;
+        n += self.user_data.encode(&mut w)?;
 
         Ok(n)
     }
@@ -35,12 +38,14 @@ impl<T: Types> codeq::Decode for RaftLogState<T> {
         let last = codeq::Decode::decode(&mut r)?;
         let committed = codeq::Decode::decode(&mut r)?;
         let purged = codeq::Decode::decode(&mut r)?;
+        let user_data = codeq::Decode::decode(&mut r)?;
 
         Ok(Self {
             vote,
             last,
             committed,
             purged,
+            user_data,
         })
     }
 }
@@ -52,6 +57,7 @@ impl<T: Types> Default for RaftLogState<T> {
             last: None,
             committed: None,
             purged: None,
+            user_data: None,
         }
     }
 }
@@ -114,7 +120,7 @@ impl<T: Types> RaftLogState<T> {
         }
 
         let expected = T::next_log_index(self.last.as_ref());
-        let this_index = T::get_log_index(log_id);
+        let this_index = T::log_index(log_id);
 
         if expected != this_index {
             return Err(LogIdNonConsecutive::new(
@@ -163,5 +169,46 @@ impl<T: Types> RaftLogState<T> {
             self.purged = Some(log_id.clone());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+    use crate::testing::ss;
+    use crate::testing::test_codec_without_corruption;
+    use crate::testing::TestTypes;
+
+    #[test]
+    fn test_raft_log_state_codec() -> Result<(), io::Error> {
+        let state = RaftLogState::<TestTypes> {
+            vote: Some((1, 2)),
+            last: Some((2, 3)),
+            committed: Some((4, 5)),
+            purged: Some((6, 7)),
+            user_data: Some(ss("hello")),
+        };
+
+        let b = vec![
+            1, // Some
+            0, 0, 0, 0, 0, 0, 0, 1, // vote.term
+            0, 0, 0, 0, 0, 0, 0, 2, // vote.voted_for
+            1, // Some
+            0, 0, 0, 0, 0, 0, 0, 2, // last.term
+            0, 0, 0, 0, 0, 0, 0, 3, // last.index
+            1, // Some
+            0, 0, 0, 0, 0, 0, 0, 4, // committed.term
+            0, 0, 0, 0, 0, 0, 0, 5, // committed.index
+            1, // Some
+            0, 0, 0, 0, 0, 0, 0, 6, // purged.term
+            0, 0, 0, 0, 0, 0, 0, 7, // purged.index
+            1, // Some
+            0, 0, 0, 5, // user_data.len
+            104, 101, 108, 108, 111, // user_data
+        ];
+
+        test_codec_without_corruption(&b, &state)
     }
 }

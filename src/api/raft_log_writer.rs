@@ -5,6 +5,12 @@ use codeq::Segment;
 use crate::Types;
 
 pub trait RaftLogWriter<T: Types> {
+    /// Update the Raft log state. This method is called when the Raft node
+    fn save_user_data(
+        &mut self,
+        user_data: Option<T::UserData>,
+    ) -> Result<Segment, io::Error>;
+
     /// Save the vote. This method is called when the Raft node receives a vote,
     /// such as, either term or `voted_for` is updated.
     ///
