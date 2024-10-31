@@ -15,7 +15,7 @@ pub struct RaftLogState<T: Types> {
     pub(crate) committed: Option<T::LogId>,
     pub(crate) purged: Option<T::LogId>,
 
-    pub(crate) user_data: Option<T::UserData>,
+    pub user_data: Option<T::UserData>,
 }
 
 impl<T: Types> codeq::Encode for RaftLogState<T> {
@@ -76,6 +76,22 @@ impl<T: Types> Default for RaftLogState<T> {
 }
 
 impl<T: Types> RaftLogState<T> {
+    pub fn vote(&self) -> Option<&T::Vote> {
+        self.vote.as_ref()
+    }
+
+    pub fn last(&self) -> Option<&T::LogId> {
+        self.last.as_ref()
+    }
+
+    pub fn committed(&self) -> Option<&T::LogId> {
+        self.committed.as_ref()
+    }
+
+    pub fn purged(&self) -> Option<&T::LogId> {
+        self.purged.as_ref()
+    }
+
     pub(crate) fn apply(
         &mut self,
         rec: &WALRecord<T>,

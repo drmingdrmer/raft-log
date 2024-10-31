@@ -10,7 +10,7 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
     type LogId: Debug + Clone + Ord + Eq + Codec + 'static;
     type LogPayload: Debug + Clone + Codec + 'static;
     type Vote: Debug + Clone + PartialOrd + Eq + Codec + 'static;
-    type Callback: Debug + Callback + Send + 'static;
+    type Callback: Callback + Send + 'static;
 
     type UserData: Debug + Clone + Eq + Codec + 'static;
 
