@@ -3,6 +3,17 @@ name = "raft-log"
 version = "0.1.0"
 edition = "2021"
 
+authors = [
+    "Zhang Yanpo <drdr.xp@gmail.com>", 
+]
+categories = ["algorithms", "data-structures"]
+description = "Raft log implementation"
+documentation = "https://docs.rs/raft-log"
+homepage = "https://github.com/drmingdrmer/raft-log"
+keywords = ["raft", "log"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/drmingdrmer/raft-log"
+
 [dependencies]
 byteorder = { version = "1.5.0" }
 codeq = { version = "0.3.0" }
