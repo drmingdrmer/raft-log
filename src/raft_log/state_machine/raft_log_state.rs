@@ -22,6 +22,9 @@ impl<T: Types> codeq::Encode for RaftLogState<T> {
     fn encode<W: io::Write>(&self, mut w: W) -> Result<usize, io::Error> {
         let mut n = 0;
 
+        let ver = 1u8;
+        n += ver.encode(&mut w)?;
+
         n += self.vote.encode(&mut w)?;
         n += self.last.encode(&mut w)?;
         n += self.committed.encode(&mut w)?;
@@ -34,19 +37,29 @@ impl<T: Types> codeq::Encode for RaftLogState<T> {
 
 impl<T: Types> codeq::Decode for RaftLogState<T> {
     fn decode<R: io::Read>(mut r: R) -> Result<Self, io::Error> {
-        let vote = codeq::Decode::decode(&mut r)?;
-        let last = codeq::Decode::decode(&mut r)?;
-        let committed = codeq::Decode::decode(&mut r)?;
-        let purged = codeq::Decode::decode(&mut r)?;
-        let user_data = codeq::Decode::decode(&mut r)?;
+        let ver: u8 = codeq::Decode::decode(&mut r)?;
 
-        Ok(Self {
-            vote,
-            last,
-            committed,
-            purged,
-            user_data,
-        })
+        match ver {
+            1 => {
+                let vote = codeq::Decode::decode(&mut r)?;
+                let last = codeq::Decode::decode(&mut r)?;
+                let committed = codeq::Decode::decode(&mut r)?;
+                let purged = codeq::Decode::decode(&mut r)?;
+                let user_data = codeq::Decode::decode(&mut r)?;
+
+                Ok(Self {
+                    vote,
+                    last,
+                    committed,
+                    purged,
+                    user_data,
+                })
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unsupported RaftLogState version: {}", ver),
+            )),
+        }
     }
 }
 
@@ -192,6 +205,7 @@ mod tests {
         };
 
         let b = vec![
+            1, // version
             1, // Some
             0, 0, 0, 0, 0, 0, 0, 1, // vote.term
             0, 0, 0, 0, 0, 0, 0, 2, // vote.voted_for

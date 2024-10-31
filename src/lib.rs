@@ -7,6 +7,8 @@ pub(crate) mod offset_reader;
 pub(crate) mod raft_log;
 pub(crate) mod testing;
 
+pub use codeq;
+
 pub mod api;
 pub mod dump_writer;
 pub mod errors;

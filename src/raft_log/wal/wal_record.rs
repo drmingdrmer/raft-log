@@ -190,6 +190,7 @@ mod tests {
 
         let b = vec![
             0, 0, 0, 5, // typ
+            1, // version
             1, // Some
             0, 0, 0, 0, 0, 0, 0, 1, // vote.term
             0, 0, 0, 0, 0, 0, 0, 2, // vote.voted_for
@@ -205,7 +206,7 @@ mod tests {
             1, // Some
             0, 0, 0, 5, // user_data.len
             104, 101, 108, 108, 111, // user_data
-            0, 0, 0, 0, 201, 132, 128, 40, // checksum
+            0, 0, 0, 0, 121, 106, 111, 41, // checksum
         ];
 
         test_codec(&b, &rec)

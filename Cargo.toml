@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 authors = [
-    "Zhang Yanpo <drdr.xp@gmail.com>", 
+    "Zhang Yanpo <drdr.xp@gmail.com>",
 ]
 categories = ["algorithms", "data-structures"]
 description = "Raft log implementation"
@@ -32,3 +32,7 @@ indoc = "2"
 [[bin]]
 name = "raft-log-dump"
 path = "src/bin/dump.rs"
+
+
+[patch.crates-io]
+codeq = { path = "../codeq" }
