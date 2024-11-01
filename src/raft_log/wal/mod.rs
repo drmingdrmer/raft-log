@@ -16,6 +16,7 @@ use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::raft_log::wal::flush_request::Flush;
 use crate::raft_log::wal::flush_worker::FlushWorker;
 use crate::ChunkId;
 use crate::Config;
@@ -61,10 +62,10 @@ where T: Types
         callback: T::Callback,
     ) -> Result<(), io::Error> {
         self.flush_tx
-            .send(FlushRequest::Flush {
+            .send(FlushRequest::Flush(Flush {
                 upto_offset: self.open.chunk.global_end(),
                 callback,
-            })
+            }))
             .map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::Other,

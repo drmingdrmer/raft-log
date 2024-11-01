@@ -34,7 +34,12 @@ impl Types for TestTypes {
 }
 
 #[test]
-fn test_foo() -> Result<(), io::Error> {
+#[ignore]
+fn test_bench_raft_log() -> Result<(), io::Error> {
+    // Usage:
+    // cargo test --release --package raft-log --bin
+    // raft-log-bench test_bench_raft_log  -- --ignored  --exact -Z
+    // unstable-options --show-output --nocapture
     let temp = tempfile::tempdir()?;
     let path = temp.path().to_str().unwrap().to_string();
     println!("{}", path);
@@ -53,7 +58,7 @@ fn test_foo() -> Result<(), io::Error> {
     let mut rl = raft_log::RaftLog::<TestTypes>::open(config)?;
 
     let n = 1024 * 1024;
-    let step = 100;
+    let step = 1000;
 
     let mut start = Instant::now();
 
