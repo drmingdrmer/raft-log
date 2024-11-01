@@ -28,10 +28,13 @@ tempfile = { version = "3.4.0" }
 pretty_assertions = "1.4.1"
 indoc = "2"
 
-
 [[bin]]
 name = "raft-log-dump"
 path = "src/bin/dump.rs"
+
+[[bin]]
+name = "raft-log-bench"
+path = "src/bin/bench.rs"
 
 
 [patch.crates-io]

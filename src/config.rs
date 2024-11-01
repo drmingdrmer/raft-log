@@ -20,7 +20,10 @@ pub struct Config {
     pub chunk_max_size: Option<usize>,
 
     /// Whether to truncate the last half sync-ed record.
-    pub(crate) truncate_incomplete_record: Option<bool>,
+    ///
+    /// If truncate, the chunk is considered successfully opened.
+    /// Otherwise, an io::Error will be returned.
+    pub truncate_incomplete_record: Option<bool>,
 }
 
 impl Config {
@@ -28,6 +31,25 @@ impl Config {
         Self {
             dir: dir.to_string(),
             ..Default::default()
+        }
+    }
+
+    pub fn new_full(
+        dir: impl ToString,
+        log_cache_max_items: Option<usize>,
+        log_cache_capacity: Option<usize>,
+        read_buffer_size: Option<usize>,
+        chunk_max_records: Option<usize>,
+        chunk_max_size: Option<usize>,
+    ) -> Self {
+        Self {
+            dir: dir.to_string(),
+            log_cache_max_items,
+            log_cache_capacity,
+            read_buffer_size,
+            chunk_max_records,
+            chunk_max_size,
+            truncate_incomplete_record: None,
         }
     }
 

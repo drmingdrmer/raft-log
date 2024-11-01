@@ -62,6 +62,7 @@ impl<T: Types> FlushWorker<T> {
     }
 
     fn run(mut self) {
+        // TODO: exhaust the queue and batch many flushes together.
         for req in self.rx.iter() {
             match req {
                 FlushRequest::AppendFile { offset, f } => {
