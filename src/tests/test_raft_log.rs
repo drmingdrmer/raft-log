@@ -8,6 +8,7 @@ use codeq::Segment;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
+use crate::api::raft_log_writer::blocking_flush;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::chunk::Chunk;
 use crate::raft_log::raft_log::RaftLog;
@@ -245,6 +246,48 @@ fn test_purge() -> Result<(), io::Error> {
 
     let got = rl.read(0, 5).collect::<Result<Vec<_>, io::Error>>()?;
     assert_eq!(logs[2..=2].to_vec(), got);
+
+    Ok(())
+}
+
+/// When reopened, the purge state should be restored
+#[test]
+fn test_purge_reopen() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(5);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+
+        let logs = [
+            //
+            ((1, 0), ss("hi")),
+            ((1, 1), ss("hello")),
+            ((1, 2), ss("world")),
+            ((1, 3), ss("foo")),
+            ((1, 4), ss("bar")),
+            ((1, 5), ss("wow")),
+            ((1, 6), ss("biz")),
+        ];
+        rl.append(logs)?;
+
+        rl.purge(5)?;
+
+        blocking_flush(&mut rl)?;
+    }
+    {
+        let rl = ctx.new_raft_log()?;
+
+        let logs = [
+            //
+            ((1, 6), ss("biz")),
+        ];
+
+        let got = rl.read(0, 10).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(logs.to_vec(), got);
+    }
 
     Ok(())
 }
