@@ -194,8 +194,14 @@ impl<T: Types> RaftLogState<T> {
         &mut self,
         log_id: &T::LogId,
     ) -> Result<(), RaftLogStateError<T>> {
-        if self.purged.as_ref() < Some(log_id) {
-            self.purged = Some(log_id.clone());
+        let purged = Some(log_id.clone());
+
+        if self.purged < purged {
+            self.purged = purged.clone();
+        }
+
+        if purged > self.last {
+            self.last = purged;
         }
         Ok(())
     }

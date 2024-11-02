@@ -261,6 +261,20 @@ fn test_purge() -> Result<(), io::Error> {
     let got = rl.read(0, 5).collect::<Result<Vec<_>, io::Error>>()?;
     assert_eq!(logs[2..=2].to_vec(), got);
 
+    // Purge advance last
+
+    rl.purge((2, 4))?;
+
+    let state = rl.log_state();
+    assert_eq!(state, &RaftLogState {
+        last: Some((2, 4)),
+        purged: Some((2, 4)),
+        ..RaftLogState::default()
+    });
+
+    let got = rl.read(0, 5).collect::<Result<Vec<_>, io::Error>>()?;
+    assert_eq!(got, vec![]);
+
     Ok(())
 }
 
