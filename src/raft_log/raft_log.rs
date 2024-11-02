@@ -81,23 +81,17 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         self.append_and_apply(&record)
     }
 
-    fn purge(&mut self, index: u64) -> Result<Segment, io::Error> {
+    fn purge(&mut self, upto: T::LogId) -> Result<Segment, io::Error> {
         // NOTE that only when the purge record is committed, the chunk file can
         // be removed.
 
         let purged = self.log_state().purged.as_ref();
 
-        let log_id = if let Some(purged) = purged {
-            if index == T::log_index(purged) {
-                return Ok(self.wal.last_segment());
-            } else {
-                self.get_log_id(index)?
-            }
-        } else {
-            self.get_log_id(index)?
-        };
+        if T::log_index(&upto) < T::next_log_index(purged) {
+            return Ok(self.wal.last_segment());
+        }
 
-        let record = WALRecord::PurgeUpto(log_id.clone());
+        let record = WALRecord::PurgeUpto(upto.clone());
         let res = self.append_and_apply(&record)?;
 
         // After commit purge record,
@@ -105,7 +99,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
 
         while let Some((_chunk_id, closed)) = self.wal.closed.first_key_value()
         {
-            if closed.state.last.as_ref() > Some(&log_id) {
+            if closed.state.last.as_ref() > Some(&upto) {
                 break;
             }
             let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();

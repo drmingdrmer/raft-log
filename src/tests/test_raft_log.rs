@@ -220,7 +220,7 @@ fn test_purge() -> Result<(), io::Error> {
 
     // Purge at current purged
 
-    let seg = rl.purge(0)?;
+    let seg = rl.purge((1, 0))?;
     assert_eq!(Segment::new(92, 35), seg);
 
     let state = rl.log_state();
@@ -235,7 +235,21 @@ fn test_purge() -> Result<(), io::Error> {
 
     //
 
-    rl.purge(2)?;
+    rl.purge((1, 2))?;
+
+    let state = rl.log_state();
+    assert_eq!(state, &RaftLogState {
+        last: Some((1, 3)),
+        purged: Some((1, 2)),
+        ..RaftLogState::default()
+    });
+
+    let got = rl.read(0, 5).collect::<Result<Vec<_>, io::Error>>()?;
+    assert_eq!(logs[2..=2].to_vec(), got);
+
+    // Purge before last purged
+
+    rl.purge((1, 1))?;
 
     let state = rl.log_state();
     assert_eq!(state, &RaftLogState {
@@ -273,7 +287,7 @@ fn test_purge_reopen() -> Result<(), io::Error> {
         ];
         rl.append(logs)?;
 
-        rl.purge(5)?;
+        rl.purge((1, 5))?;
 
         blocking_flush(&mut rl)?;
     }
@@ -345,7 +359,7 @@ fn test_purge_removes_chunks() -> Result<(), io::Error> {
         println!("Before purge:\n{}", dump);
         assert_eq!(want_dumped, dump);
 
-        rl.purge(3)?;
+        rl.purge((2, 3))?;
 
         let dump =
             RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
@@ -787,7 +801,7 @@ fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {
     build_sample_data(rl)?;
-    rl.purge(3)?;
+    rl.purge((2, 3))?;
 
     let dumped = indoc! {r#"
         RaftLog:
@@ -834,7 +848,7 @@ fn build_sample_data(rl: &mut RaftLog<TestTypes>) -> Result<String, io::Error> {
     rl.append(logs)?;
 
     rl.commit((1, 2))?;
-    rl.purge(1)?;
+    rl.purge((1, 1))?;
 
     let logs = [
         //
