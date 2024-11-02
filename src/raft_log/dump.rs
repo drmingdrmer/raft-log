@@ -79,15 +79,20 @@ impl<'a, T: Types> DumpApi<T> for RefDump<'a, T> {
             u64,
             Result<(Segment, WALRecord<T>), Error>,
         ) -> Result<(), Error> {
-        let closed = self.raft_log.wal.closed.values().map(|c| &c.chunk);
-        let chunks = closed.chain([&self.raft_log.wal.open.chunk]);
+        let closed =
+            self.raft_log.wal.closed.values().map(|c| c.chunk.chunk_id());
 
-        for chunk in chunks {
-            let f = chunk.f.clone();
-            let chunk_id = chunk.chunk_id();
+        let chunk_ids = closed.chain([self.raft_log.wal.open.chunk.chunk_id()]);
 
-            let it =
-                Chunk::load_records_iter(self.config.as_ref(), f, chunk_id)?;
+        for chunk_id in chunk_ids {
+            let f =
+                Chunk::<T>::open_chunk_file(self.config.as_ref(), chunk_id)?;
+
+            let it = Chunk::load_records_iter(
+                self.config.as_ref(),
+                Arc::new(f),
+                chunk_id,
+            )?;
 
             for (i, res) in it.enumerate() {
                 write_record(chunk_id, i as u64, res)?;

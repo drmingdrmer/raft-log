@@ -1,6 +1,5 @@
 use std::fs::OpenOptions;
 use std::io;
-use std::io::Seek;
 use std::io::Write;
 use std::sync::Arc;
 
@@ -59,8 +58,6 @@ where T: Types
         self.record_write_buf.clear();
         let size = rec.encode(&mut self.record_write_buf)?;
 
-        let start = self.chunk.end_offset();
-        self.chunk.f.seek(io::SeekFrom::Start(start))?;
         self.chunk.f.write_all(&self.record_write_buf)?;
 
         self.chunk.append_record_size(size as u64);

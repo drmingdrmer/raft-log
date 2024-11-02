@@ -55,6 +55,7 @@ impl<T> Chunk<T> {
         Segment::new(start, end - start)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn end_offset(&self) -> u64 {
         self.global_offsets[self.global_offsets.len() - 1]
             - self.global_offsets[0]
@@ -153,6 +154,9 @@ where T: Types
     }
 
     /// Returns an iterator of `start, end, record` or error.
+    ///
+    /// This method should always use a newly opened file.
+    /// Because `seek` may affect other open file descriptors.
     pub(crate) fn load_records_iter<'a>(
         config: &'a Config,
         mut f: Arc<File>,
