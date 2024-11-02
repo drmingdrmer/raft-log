@@ -2,6 +2,7 @@ use std::fs::File;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
+use crate::ChunkId;
 use crate::Types;
 
 pub(crate) struct Flush<T: Types> {
@@ -19,6 +20,12 @@ pub(crate) enum FlushRequest<T: Types> {
         offset: u64,
         f: Arc<File>,
     },
+
+    /// Remove chunks that have been purged.
+    ///
+    /// This job must be done in FlushWorker to ensure it is after the
+    /// corresponding purge record is flushed.
+    RemoveChunks { chunk_paths: Vec<String> },
 
     /// Sync all files in order.
     Flush(Flush<T>),

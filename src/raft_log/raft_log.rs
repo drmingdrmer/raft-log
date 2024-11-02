@@ -19,6 +19,7 @@ use crate::file_lock;
 use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::Dump;
+use crate::raft_log::dump::RefDump;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::wal::RaftLogWAL;
@@ -37,6 +38,11 @@ pub struct RaftLog<T: Types> {
     pub(crate) wal: RaftLogWAL<T>,
 
     pub(crate) state_machine: RaftLogStateMachine<T>,
+
+    /// The chunk paths that are no longer needed because all logs in them are
+    /// purged. But removing them must be postponed until the purge record
+    /// is flushed to disk.
+    removed_chunks: Vec<String>,
 
     state: AccessStat,
 }
@@ -94,8 +100,9 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         let record = WALRecord::PurgeUpto(upto.clone());
         let res = self.append_and_apply(&record)?;
 
-        // After commit purge record,
-        // remove the closed chunks that are purged.
+        // Buffer the chunk ids to remove.
+        // After the purge record is flushed to disk,
+        // remove them in the FlushWorker
 
         while let Some((_chunk_id, closed)) = self.wal.closed.first_key_value()
         {
@@ -104,7 +111,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             }
             let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();
             let path = self.config.chunk_path(chunk_id);
-            std::fs::remove_file(path)?;
+            self.removed_chunks.push(path);
         }
 
         Ok(res)
@@ -118,13 +125,21 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     fn flush(&mut self, callback: T::Callback) -> Result<(), io::Error> {
         self.wal.send_flush(callback)?;
 
+        if !self.removed_chunks.is_empty() {
+            let chunk_ids = self.removed_chunks.drain(..).collect::<Vec<_>>();
+            self.wal.send_remove_chunks(chunk_ids)?;
+        }
+
         Ok(())
     }
 }
 
 impl<T: Types> RaftLog<T> {
-    pub fn dump(config: Arc<Config>) -> Dump<T> {
-        Dump::new(config)
+    pub fn dump(&self) -> RefDump<'_, T> {
+        RefDump {
+            config: self.config.clone(),
+            raft_log: self,
+        }
     }
 
     pub fn config(&self) -> &Config {
@@ -185,6 +200,7 @@ impl<T: Types> RaftLog<T> {
             state_machine: sm,
             wal: RaftLogWAL::new(config, closed, open),
             state: Default::default(),
+            removed_chunks: vec![],
         };
 
         Ok(s)

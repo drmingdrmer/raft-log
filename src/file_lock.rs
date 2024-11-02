@@ -9,6 +9,7 @@ use crate::Config;
 
 #[derive(Debug)]
 pub(crate) struct FileLock {
+    config: Arc<Config>,
     f: File,
 }
 
@@ -24,7 +25,6 @@ impl FileLock {
             .open(path)?;
 
         f.try_lock_exclusive().map_err(|e| {
-            println!("Error: {:?}", e);
             io::Error::new(
                 io::ErrorKind::WouldBlock,
                 format!(
@@ -36,7 +36,12 @@ impl FileLock {
             )
         })?;
 
-        Ok(Self { f })
+        println!(
+            "Directory lock acquired: {}",
+            Self::lock_path(config.as_ref())
+        );
+
+        Ok(Self { config, f })
     }
 
     pub(crate) fn lock_path(config: &Config) -> String {
@@ -47,6 +52,10 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         let _ = self.f.unlock();
+        println!(
+            "Directory lock released: {}",
+            Self::lock_path(self.config.as_ref())
+        );
     }
 }
 

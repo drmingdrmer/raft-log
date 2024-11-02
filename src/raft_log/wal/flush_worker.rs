@@ -62,15 +62,22 @@ impl<T: Types> FlushWorker<T> {
     }
 
     fn run(mut self) {
+        let res = self.run_inner();
+        if let Err(e) = res {
+            log::error!("FlushWorker failed: {}", e);
+        }
+    }
+
+    fn run_inner(mut self) -> Result<(), io::Error> {
         loop {
             let req = self.rx.recv();
             let Ok(req) = req else {
                 log::info!("FlushWorker input channel closed, quit");
-                break;
+                return Ok(());
             };
 
             let FlushRequest::Flush(flush) = req else {
-                self.handle_non_flush_request(req);
+                self.handle_non_flush_request(req)?;
                 continue;
             };
 
@@ -123,12 +130,15 @@ impl<T: Types> FlushWorker<T> {
 
             // Handle the last non-flush request
             if let Some(last) = last_non_flush {
-                self.handle_non_flush_request(last);
+                self.handle_non_flush_request(last)?;
             }
         }
     }
 
-    fn handle_non_flush_request(&mut self, req: FlushRequest<T>) {
+    fn handle_non_flush_request(
+        &mut self,
+        req: FlushRequest<T>,
+    ) -> Result<(), io::Error> {
         match req {
             FlushRequest::AppendFile { offset, f } => {
                 self.files.push(FileEntry::new(offset, f));
@@ -144,7 +154,14 @@ impl<T: Types> FlushWorker<T> {
                     .collect();
                 let _ = tx.send(stat);
             }
+            FlushRequest::RemoveChunks { chunk_paths } => {
+                for path in chunk_paths {
+                    std::fs::remove_file(path)?;
+                }
+            }
         }
+
+        Ok(())
     }
 
     pub fn sync_all_files(

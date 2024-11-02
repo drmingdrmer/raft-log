@@ -96,8 +96,9 @@ where T: Types
         config: Arc<Config>,
         chunk_id: ChunkId,
     ) -> Result<(Self, Vec<WALRecord<T>>), io::Error> {
-        let mut f = Self::open_chunk_file(&config, chunk_id)?;
-        let it = Self::load_records_iter(&config, &mut f, chunk_id)?;
+        let f = Self::open_chunk_file(&config, chunk_id)?;
+        let arc_f = Arc::new(f);
+        let it = Self::load_records_iter(&config, arc_f.clone(), chunk_id)?;
 
         let mut record_offsets = vec![chunk_id.offset()];
         let mut records = Vec::new();
@@ -125,12 +126,13 @@ where T: Types
         }
 
         if truncate {
-            f.set_len(*record_offsets.last().unwrap() - chunk_id.offset())?;
-            f.sync_all()?;
+            arc_f
+                .set_len(*record_offsets.last().unwrap() - chunk_id.offset())?;
+            arc_f.sync_all()?;
         }
 
         let chunk = Self {
-            f: Arc::new(f),
+            f: arc_f,
             global_offsets: record_offsets,
             _p: Default::default(),
         };
@@ -144,12 +146,8 @@ where T: Types
         chunk_id: ChunkId,
     ) -> Result<Vec<Result<(Segment, WALRecord<T>), io::Error>>, io::Error>
     {
-        // When dumping, do not truncate file:
-        let mut config = config.clone();
-        config.truncate_incomplete_record = Some(false);
-
-        let mut f = Self::open_chunk_file(&config, chunk_id)?;
-        let it = Self::load_records_iter(&config, &mut f, chunk_id)?;
+        let f = Self::open_chunk_file(config, chunk_id)?;
+        let it = Self::load_records_iter(config, Arc::new(f), chunk_id)?;
 
         Ok(it.collect::<Vec<_>>())
     }
@@ -157,7 +155,7 @@ where T: Types
     /// Returns an iterator of `start, end, record` or error.
     pub(crate) fn load_records_iter<'a>(
         config: &'a Config,
-        f: &'a mut File,
+        mut f: Arc<File>,
         chunk_id: ChunkId,
     ) -> Result<
         impl Iterator<Item = Result<(Segment, WALRecord<T>), io::Error>> + 'a,

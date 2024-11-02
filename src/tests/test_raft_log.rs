@@ -1,6 +1,8 @@
 use std::io;
 use std::io::Seek;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -11,6 +13,8 @@ use pretty_assertions::assert_eq;
 use crate::api::raft_log_writer::blocking_flush;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::chunk::Chunk;
+use crate::raft_log::dump::Dump;
+use crate::raft_log::dump::DumpApi;
 use crate::raft_log::raft_log::RaftLog;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::testing::ss;
@@ -41,8 +45,7 @@ ChunkId(00_000_000_000_000_000_000)
   R-00002: [000_000_043, 000_000_061) 18: State(RaftLogState { vote: None, last: None, committed: None, purged: None, user_data: None })
 "#};
 
-    let dump =
-        RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+    let dump = rl.dump().write_to_string()?;
     println!("{}", dump);
     assert_eq!(want_dumped, dump);
 
@@ -221,6 +224,7 @@ fn test_purge() -> Result<(), io::Error> {
     // Purge at current purged
 
     let seg = rl.purge((1, 0))?;
+    blocking_flush(&mut rl)?;
     assert_eq!(Segment::new(92, 35), seg);
 
     let state = rl.log_state();
@@ -236,6 +240,7 @@ fn test_purge() -> Result<(), io::Error> {
     //
 
     rl.purge((1, 2))?;
+    blocking_flush(&mut rl)?;
 
     let state = rl.log_state();
     assert_eq!(state, &RaftLogState {
@@ -250,6 +255,7 @@ fn test_purge() -> Result<(), io::Error> {
     // Purge before last purged
 
     rl.purge((1, 1))?;
+    blocking_flush(&mut rl)?;
 
     let state = rl.log_state();
     assert_eq!(state, &RaftLogState {
@@ -264,6 +270,7 @@ fn test_purge() -> Result<(), io::Error> {
     // Purge advance last
 
     rl.purge((2, 4))?;
+    blocking_flush(&mut rl)?;
 
     let state = rl.log_state();
     assert_eq!(state, &RaftLogState {
@@ -302,7 +309,6 @@ fn test_purge_reopen() -> Result<(), io::Error> {
         rl.append(logs)?;
 
         rl.purge((1, 5))?;
-
         blocking_flush(&mut rl)?;
     }
     {
@@ -368,15 +374,16 @@ fn test_purge_removes_chunks() -> Result<(), io::Error> {
 
         let want_dumped = build_sample_data(&mut rl)?;
 
-        let dump =
-            RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+        let dump = rl.dump().write_to_string()?;
         println!("Before purge:\n{}", dump);
         assert_eq!(want_dumped, dump);
 
         rl.purge((2, 3))?;
+        blocking_flush(&mut rl)?;
 
-        let dump =
-            RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+        sleep(Duration::from_secs(1));
+
+        let dump = rl.dump().write_to_string()?;
         println!("After purge:\n{}", dump);
         assert_eq!(
             indoc! {r#"
@@ -426,8 +433,7 @@ fn test_re_open() -> Result<(), io::Error> {
             rl.read(0, 1000).collect::<Result<Vec<_>, io::Error>>()?
         );
 
-        let dump =
-            RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+        let dump = rl.dump().write_to_string()?;
         println!("After reopen:\n{}", dump);
 
         assert_eq!(
@@ -488,8 +494,7 @@ fn test_re_open_unfinished_chunk() -> Result<(), io::Error> {
         assert_eq!(state, rl.log_state().clone());
         assert_eq!(logs, rl.read(0, 1000).collect::<Result<Vec<_>, _>>()?);
 
-        let dump =
-            RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+        let dump = rl.dump().write_to_string()?;
         println!("After reopen:\n{}", dump);
 
         assert_eq!(
@@ -547,7 +552,7 @@ fn test_re_open_unfinished_non_last_chunk() -> Result<(), io::Error> {
         assert_eq!("Gap between chunks: 00_000_000_000_000_000_474 -> 00_000_000_000_000_000_509; Can not open, fix this error and re-open", res.unwrap_err().to_string());
 
         let dump =
-            RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+            Dump::<TestTypes>::new(ctx.arc_config())?.write_to_string()?;
         println!("After reopen:\n{}", dump);
 
         assert_eq!(
@@ -609,7 +614,7 @@ fn test_re_open_damaged_last_record() -> Result<(), io::Error> {
         );
 
         let dump =
-            RaftLog::<TestTypes>::dump(ctx.arc_config()).write_to_string()?;
+            Dump::<TestTypes>::new(ctx.arc_config())?.write_to_string()?;
         println!("After reopen:\n{}", dump);
 
         assert_eq!(
@@ -789,21 +794,19 @@ fn test_sync() -> Result<(), io::Error> {
 
         build_sample_data(&mut rl)?;
 
-        let sync_stat = rl.wal.get_stat()?;
+        let flush_stat = rl.wal.get_stat()?;
         assert_eq!(
-            vec![(0, 0), (161, 0), (324, 0), (509, 0)],
-            sync_stat,
-            "4 chunks(starting offset and synced-offset), all unsynced"
+            vec![(324, 402), (509, 0)],
+            flush_stat,
+            "2 chunks(starting offset and synced-offset), partially synced and not synced"
         );
 
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        rl.flush(tx)?;
-        rx.recv().unwrap()?;
+        blocking_flush(&mut rl)?;
 
-        let sync_stat = rl.wal.get_stat()?;
+        let flush_stat = rl.wal.get_stat()?;
         assert_eq!(
             vec![(509, 610)],
-            sync_stat,
+            flush_stat,
             "4 chunks, all synced, the first 3 are removed"
         );
     }
@@ -815,7 +818,9 @@ fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {
     build_sample_data(rl)?;
+
     rl.purge((2, 3))?;
+    blocking_flush(rl)?;
 
     let dumped = indoc! {r#"
         RaftLog:
@@ -831,11 +836,13 @@ fn build_sample_data_purge_upto_3(
           R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
         "#};
 
-    let dump = RaftLog::<TestTypes>::dump(Arc::new(rl.config().clone()))
-        .write_to_string()?;
+    let dump = rl.dump().write_to_string()?;
     println!("After purge:\n{}", dump);
 
     assert_eq!(dumped, dump);
+
+    /// Wait for FlushWorker to quit and remove purged chunks
+    sleep(Duration::from_millis(100));
 
     Ok(dumped.to_string())
 }
@@ -863,6 +870,7 @@ fn build_sample_data(rl: &mut RaftLog<TestTypes>) -> Result<String, io::Error> {
 
     rl.commit((1, 2))?;
     rl.purge((1, 1))?;
+    blocking_flush(rl)?;
 
     let logs = [
         //

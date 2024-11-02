@@ -73,6 +73,19 @@ where T: Types
                 )
             })
     }
+    pub(crate) fn send_remove_chunks(
+        &self,
+        chunk_paths: Vec<String>,
+    ) -> Result<(), io::Error> {
+        self.flush_tx.send(FlushRequest::RemoveChunks { chunk_paths }).map_err(
+            |e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to send remove chunks request: {}", e),
+                )
+            },
+        )
+    }
 
     #[allow(dead_code)]
     pub(crate) fn get_stat(&self) -> Result<Vec<(u64, u64)>, io::Error> {
