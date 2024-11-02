@@ -61,7 +61,7 @@ impl<T: Types> FlushWorker<T> {
         }
     }
 
-    fn run(mut self) {
+    fn run(self) {
         let res = self.run_inner();
         if let Err(e) = res {
             log::error!("FlushWorker failed: {}", e);

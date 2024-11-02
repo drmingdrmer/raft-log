@@ -1,6 +1,5 @@
 use std::io;
 use std::io::Seek;
-use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -25,7 +24,7 @@ use crate::ChunkId;
 
 #[test]
 fn test_save_user_data() -> Result<(), io::Error> {
-    let (ctx, mut rl) = new_testing()?;
+    let (_ctx, mut rl) = new_testing()?;
 
     rl.save_user_data(Some(ss("foo")))?;
 
@@ -690,6 +689,7 @@ fn test_read_with_cache() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// This test ensures that the logs in the open chunk are always cached.
 #[test]
 fn test_read_without_cache() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
@@ -713,19 +713,38 @@ fn test_read_without_cache() -> Result<(), io::Error> {
         ];
         assert_eq!(logs.to_vec(), got);
         assert_eq!(
-            "AccessStat{cache(hit/miss)=0/4}",
-            rl.access_stat().to_string()
+            "AccessStat{cache(hit/miss)=1/3}",
+            rl.access_stat().to_string(),
+            "logs in open chunk are always cached"
         );
     }
 
     // Re-open
     {
         let mut rl = ctx.new_raft_log()?;
+
+        println!("re-open:\n{}", rl.dump().write_to_string()?);
+        let got = rl.read(0, 1000).collect::<Result<Vec<_>, _>>()?;
+        let logs = [
+            //
+            ((2, 4), ss("world")),
+            ((2, 5), ss("foo")),
+            ((2, 6), ss("bar")),
+            ((2, 7), ss("wow")),
+        ];
+        assert_eq!(logs.to_vec(), got);
+        assert_eq!(
+            "AccessStat{cache(hit/miss)=1/3}",
+            rl.access_stat().to_string(),
+            "the hit is 1 because the last inserted log has not yet evicted by a new insert"
+        );
+
         let logs = [
             //
             ((3, 8), ss("goo")),
         ];
         rl.append(logs)?;
+        println!("After append:\n{}", rl.dump().write_to_string()?);
 
         let got = rl.read(0, 1000).collect::<Result<Vec<_>, _>>()?;
 
@@ -739,8 +758,9 @@ fn test_read_without_cache() -> Result<(), io::Error> {
         ];
         assert_eq!(logs.to_vec(), got);
         assert_eq!(
-            "AccessStat{cache(hit/miss)=0/5}",
-            rl.access_stat().to_string()
+            "AccessStat{cache(hit/miss)=2/7}",
+            rl.access_stat().to_string(),
+            "another hit on the last log"
         );
     }
 
@@ -841,7 +861,7 @@ fn build_sample_data_purge_upto_3(
 
     assert_eq!(dumped, dump);
 
-    /// Wait for FlushWorker to quit and remove purged chunks
+    // Wait for FlushWorker to quit and remove purged chunks
     sleep(Duration::from_millis(100));
 
     Ok(dumped.to_string())

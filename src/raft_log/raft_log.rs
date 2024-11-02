@@ -18,7 +18,6 @@ use crate::errors::RaftLogStateError;
 use crate::file_lock;
 use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
-use crate::raft_log::dump::Dump;
 use crate::raft_log::dump::RefDump;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::state_machine::RaftLogStateMachine;
@@ -182,6 +181,10 @@ impl<T: Types> RaftLog<T> {
                 sm.apply(&record, chunk_id, seg)?;
             }
 
+            // On disk logs can be evicted from the cache.
+            let last_log_id = sm.log_state.last.clone();
+            sm.payload_cache.set_last_evictable(last_log_id);
+
             closed.insert(
                 chunk_id,
                 ClosedChunk::new(chunk, sm.log_state.clone()),
@@ -294,8 +297,16 @@ impl<T: Types> RaftLog<T> {
             self.wal.last_segment(),
         )?;
 
-        self.wal
+        let closed_state = self
+            .wal
             .try_close_full_chunk(|| self.state_machine.log_state.clone())?;
+
+        // When a chunk is closed, the logs in this chunk can be evicted from
+        // cache.
+        if let Some(state) = closed_state {
+            let last_log_id = state.last().cloned();
+            self.state_machine.payload_cache.set_last_evictable(last_log_id);
+        }
 
         Ok(self.wal.last_segment())
     }

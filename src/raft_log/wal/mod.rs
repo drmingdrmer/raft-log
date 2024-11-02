@@ -123,9 +123,9 @@ where T: Types
     pub(crate) fn try_close_full_chunk(
         &mut self,
         get_state: impl FnOnce() -> RaftLogState<T>,
-    ) -> Result<(), io::Error> {
+    ) -> Result<Option<RaftLogState<T>>, io::Error> {
         if !self.is_open_chunk_full() {
-            return Ok(());
+            return Ok(None);
         }
 
         let config = self.config.clone();
@@ -157,9 +157,9 @@ where T: Types
 
         let chunk = new_open.chunk;
         let closed_id = chunk.chunk_id();
-        let closed = ClosedChunk::new(chunk, state);
+        let closed = ClosedChunk::new(chunk, state.clone());
         self.closed.insert(closed_id, closed);
-        Ok(())
+        Ok(Some(state))
     }
 
     pub(crate) fn load_log_payload(
@@ -169,9 +169,10 @@ where T: Types
         let chunk_id = log_data.chunk_id;
         let segment = log_data.record_segment;
 
-        let record = if chunk_id == self.open.chunk.chunk_id() {
-            self.open.chunk.read_record(segment)?
-        } else {
+        // All logs in open chunk are cached.
+        // See: payload_cache.set_last_evictable()
+
+        let record = {
             let closed = self.closed.get(&chunk_id).ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,

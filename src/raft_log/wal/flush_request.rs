@@ -2,7 +2,6 @@ use std::fs::File;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
-use crate::ChunkId;
 use crate::Types;
 
 pub(crate) struct Flush<T: Types> {
