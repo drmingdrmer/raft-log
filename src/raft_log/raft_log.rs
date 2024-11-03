@@ -183,7 +183,7 @@ impl<T: Types> RaftLog<T> {
 
             // On disk logs can be evicted from the cache.
             let last_log_id = sm.log_state.last.clone();
-            sm.payload_cache.set_last_evictable(last_log_id);
+            sm.payload_cache.write().unwrap().set_last_evictable(last_log_id);
 
             closed.insert(
                 chunk_id,
@@ -197,11 +197,15 @@ impl<T: Types> RaftLog<T> {
             WALRecord::State(sm.log_state.clone()),
         )?;
 
+        let cache = sm.payload_cache.clone();
+
+        let wal = RaftLogWAL::new(config.clone(), closed, open, cache);
+
         let s = Self {
-            config: config.clone(),
+            config,
             _dir_lock: dir_lock,
             state_machine: sm,
-            wal: RaftLogWAL::new(config, closed, open),
+            wal,
             state: Default::default(),
             removed_chunks: vec![],
         };
@@ -249,7 +253,8 @@ impl<T: Types> RaftLog<T> {
         self.state_machine.log.range(from..to).map(|(_, log_data)| {
             let log_id = log_data.log_id.clone();
 
-            let payload = self.state_machine.payload_cache.get(&log_id);
+            let payload =
+                self.state_machine.payload_cache.read().unwrap().get(&log_id);
 
             let payload = if let Some(payload) = payload {
                 self.state.cache_hit.fetch_add(1, Ordering::Relaxed);
@@ -297,16 +302,8 @@ impl<T: Types> RaftLog<T> {
             self.wal.last_segment(),
         )?;
 
-        let closed_state = self
-            .wal
+        self.wal
             .try_close_full_chunk(|| self.state_machine.log_state.clone())?;
-
-        // When a chunk is closed, the logs in this chunk can be evicted from
-        // cache.
-        if let Some(state) = closed_state {
-            let last_log_id = state.last().cloned();
-            self.state_machine.payload_cache.set_last_evictable(last_log_id);
-        }
 
         Ok(self.wal.last_segment())
     }

@@ -3,23 +3,34 @@ use std::io;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::sync::RwLock;
 
+use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushRequest;
 use crate::Types;
 
-pub(crate) struct FileEntry {
+pub(crate) struct FileEntry<T: Types> {
     pub(crate) starting_offset: u64,
     pub(crate) f: Arc<File>,
+
+    /// The first log id in this file, also the last log id in the previous
+    /// chunk file.
+    pub(crate) first_log_id: Option<T::LogId>,
     /// for debug
     pub(crate) sync_id: u64,
 }
 
-impl FileEntry {
-    pub(crate) fn new(starting_offset: u64, f: Arc<File>) -> Self {
+impl<T: Types> FileEntry<T> {
+    pub(crate) fn new(
+        starting_offset: u64,
+        f: Arc<File>,
+        last_log_id: Option<T::LogId>,
+    ) -> Self {
         Self {
             starting_offset,
             f,
+            first_log_id: last_log_id,
             sync_id: 0,
         }
     }
@@ -27,37 +38,30 @@ impl FileEntry {
 
 pub(crate) struct FlushWorker<T: Types> {
     rx: Receiver<FlushRequest<T>>,
-    files: Vec<FileEntry>,
+    files: Vec<FileEntry<T>>,
+    cache: Arc<RwLock<PayloadCache<T>>>,
 }
 
 impl<T: Types> FlushWorker<T> {
     /// When starting, there is at most one open chunk file that is not sync.
-    pub(crate) fn start_flush_worker(
-        offset: u64,
-        f: Arc<File>,
-    ) -> SyncSender<FlushRequest<T>> {
-        let (tx, rx) = std::sync::mpsc::sync_channel(1024);
-
-        let worker = FlushWorker::new(rx, offset, f);
-
+    pub(crate) fn spawn(self) {
         std::thread::Builder::new()
             .name("raft_log_wal_flush_worker".to_string())
             .spawn(move || {
-                worker.run();
+                self.run();
             })
             .expect("Failed to start sync worker thread");
-
-        tx
     }
 
     pub(crate) fn new(
         rx: Receiver<FlushRequest<T>>,
-        offset: u64,
-        f: Arc<File>,
+        file_entry: FileEntry<T>,
+        cache: Arc<RwLock<PayloadCache<T>>>,
     ) -> Self {
         Self {
             rx,
-            files: vec![FileEntry::new(offset, f)],
+            files: vec![file_entry],
+            cache,
         }
     }
 
@@ -98,12 +102,11 @@ impl<T: Types> FlushWorker<T> {
                 };
             }
 
+            println!("batched flush: {}", batch.len());
+
             {
                 let last_flush = batch.last().unwrap();
-                let res = Self::sync_all_files(
-                    &mut self.files,
-                    last_flush.upto_offset,
-                );
+                let res = self.sync_all_files(last_flush.upto_offset);
 
                 match res {
                     Ok(_) => {
@@ -140,8 +143,8 @@ impl<T: Types> FlushWorker<T> {
         req: FlushRequest<T>,
     ) -> Result<(), io::Error> {
         match req {
-            FlushRequest::AppendFile { offset, f } => {
-                self.files.push(FileEntry::new(offset, f));
+            FlushRequest::AppendFile(file_entry) => {
+                self.files.push(file_entry);
             }
             FlushRequest::Flush(_) => {
                 unreachable!("Flush request should be handled in run()");
@@ -164,10 +167,9 @@ impl<T: Types> FlushWorker<T> {
         Ok(())
     }
 
-    pub fn sync_all_files(
-        files: &mut Vec<FileEntry>,
-        offset: u64,
-    ) -> Result<(), io::Error> {
+    pub fn sync_all_files(&mut self, offset: u64) -> Result<(), io::Error> {
+        let files = &mut self.files;
+
         if files.is_empty() {
             return Ok(());
         }
@@ -175,6 +177,20 @@ impl<T: Types> FlushWorker<T> {
         while files.len() > 1 {
             let f = files.remove(0);
             f.f.sync_data()?;
+        }
+
+        // The second last and before are all closed,
+        // When sync-ed, the logs in the cache can be evicted
+
+        let f = &mut files[0];
+
+        {
+            let mut cache = self.cache.write().unwrap();
+            // println!(
+            //     "FlushWorker set last_evictable: {:?}; starting_offset: {}",
+            //     f.first_log_id, f.starting_offset
+            // );
+            cache.set_last_evictable(f.first_log_id.clone());
         }
 
         files[0].f.sync_data()?;

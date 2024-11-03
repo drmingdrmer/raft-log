@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use codeq::OffsetSize;
 use codeq::Segment;
@@ -15,8 +16,10 @@ use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
+use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::flush_request::Flush;
+use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::raft_log::wal::flush_worker::FlushWorker;
 use crate::ChunkId;
 use crate::Config;
@@ -43,11 +46,23 @@ where T: Types
         config: Arc<Config>,
         closed: BTreeMap<ChunkId, ClosedChunk<T>>,
         open: OpenChunk<T>,
+        cache: Arc<RwLock<PayloadCache<T>>>,
     ) -> Self {
-        let flush_tx = FlushWorker::start_flush_worker(
-            open.chunk.global_start(),
-            open.chunk.f.clone(),
-        );
+        let last_closed_chunk_state =
+            closed.iter().last().map(|(_, c)| c.state.clone());
+
+        let prev_last_log_id =
+            last_closed_chunk_state.and_then(|s| s.last().cloned());
+
+        let offset = open.chunk.global_start();
+        let f = open.chunk.f.clone();
+
+        let file_entry = FileEntry::new(offset, f, prev_last_log_id);
+
+        let (flush_tx, rx) = std::sync::mpsc::sync_channel(1024);
+        let worker = FlushWorker::new(rx, file_entry, cache);
+
+        worker.spawn();
 
         Self {
             config,
@@ -144,10 +159,11 @@ where T: Types
 
         std::mem::swap(&mut new_open, &mut self.open);
         self.flush_tx
-            .send(FlushRequest::AppendFile {
+            .send(FlushRequest::AppendFile(FileEntry::new(
                 offset,
-                f: self.open.chunk.f.clone(),
-            })
+                new_open.chunk.f.clone(),
+                state.last().cloned(),
+            )))
             .map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::Other,
@@ -176,7 +192,10 @@ where T: Types
             let closed = self.closed.get(&chunk_id).ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,
-                    format!("Chunk not found: {}", chunk_id),
+                    format!(
+                        "Chunk not found: {}; when:(open cache-miss read)",
+                        chunk_id
+                    ),
                 )
             })?;
             closed.chunk.read_record(segment)?

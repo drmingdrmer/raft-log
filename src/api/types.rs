@@ -7,8 +7,8 @@ use crate::raft_log::wal::callback::Callback;
 pub trait Types
 where Self: Debug + Default + PartialEq + Eq + Clone + 'static
 {
-    type LogId: Debug + Clone + Ord + Eq + Codec + 'static;
-    type LogPayload: Debug + Clone + Codec + 'static;
+    type LogId: Debug + Clone + Ord + Eq + Codec + Send + Sync + 'static;
+    type LogPayload: Debug + Clone + Codec + Send + Sync + 'static;
     type Vote: Debug + Clone + PartialOrd + Eq + Codec + 'static;
     type Callback: Callback + Send + 'static;
 

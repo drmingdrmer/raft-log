@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 use codeq::Segment;
 use payload_cache::PayloadCache;
@@ -18,7 +20,7 @@ pub mod raft_log_state;
 #[derive(Debug)]
 pub struct RaftLogStateMachine<T: Types> {
     pub(crate) log: BTreeMap<u64, LogData<T>>,
-    pub(crate) payload_cache: PayloadCache<T>,
+    pub(crate) payload_cache: Arc<RwLock<PayloadCache<T>>>,
     pub(crate) log_state: RaftLogState<T>,
 }
 
@@ -26,10 +28,10 @@ impl<T: Types> RaftLogStateMachine<T> {
     pub fn new(config: &Config) -> Self {
         Self {
             log: BTreeMap::new(),
-            payload_cache: PayloadCache::new(
+            payload_cache: Arc::new(RwLock::new(PayloadCache::new(
                 config.log_cache_max_items(),
                 config.log_cache_capacity(),
-            ),
+            ))),
             log_state: RaftLogState::default(),
         }
     }
@@ -51,16 +53,19 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
                     T::log_index(log_id),
                     LogData::new(log_id.clone(), chunk_id, segment),
                 );
-                self.payload_cache.insert(log_id.clone(), payload.clone());
+                self.payload_cache
+                    .write()
+                    .unwrap()
+                    .insert(log_id.clone(), payload.clone());
             }
             WALRecord::Commit(_committed) => {}
             WALRecord::TruncateAfter(log_id) => {
                 let index = T::next_log_index(log_id.as_ref());
                 self.log.split_off(&index);
                 if let Some(log_id) = log_id {
-                    self.payload_cache.truncate_after(log_id);
+                    self.payload_cache.write().unwrap().truncate_after(log_id);
                 } else {
-                    self.payload_cache.clear();
+                    self.payload_cache.write().unwrap().clear();
                 }
             }
             WALRecord::PurgeUpto(log_id) => {

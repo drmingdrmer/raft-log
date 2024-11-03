@@ -27,7 +27,7 @@ impl<T: Types> PayloadCache<T> {
     }
 
     pub(crate) fn set_last_evictable(&mut self, log_id: Option<T::LogId>) {
-        println!("set_last_evictable: {:?}", log_id);
+        // println!("set_last_evictable: {:?}", log_id);
         self.last_evictable = log_id;
     }
 
@@ -51,21 +51,15 @@ impl<T: Types> PayloadCache<T> {
     }
 
     pub(crate) fn try_evict(&mut self) {
-        if self.last_evictable.is_some() {
-            while self.need_evict() {
-                if let Some((log_id, _payload)) = self.cache.first_key_value() {
-                    if Some(log_id) <= self.last_evictable.as_ref() {
-                        self.evict_first()
-                    } else {
-                        return;
-                    }
+        while self.need_evict() {
+            if let Some((log_id, _payload)) = self.cache.first_key_value() {
+                if Some(log_id) <= self.last_evictable.as_ref() {
+                    self.evict_first()
                 } else {
                     return;
                 }
-            }
-        } else {
-            while self.need_evict() {
-                self.evict_first();
+            } else {
+                return;
             }
         }
     }
@@ -109,6 +103,8 @@ mod tests {
     #[test]
     fn test_cache() {
         let mut cache = PayloadCache::<TestTypes>::new(2, 10);
+        // make all evictable
+        cache.set_last_evictable(Some((1, 10)));
 
         let payload1 = "foo".to_string();
         let payload2 = "bar".to_string();

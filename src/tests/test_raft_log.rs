@@ -651,14 +651,28 @@ fn test_read_with_cache() -> Result<(), io::Error> {
 
         rl.read(4, 8).collect::<Result<Vec<_>, _>>()?;
         assert_eq!(
-            "AccessStat{cache(hit/miss)=3/1}",
-            rl.access_stat().to_string()
+            "AccessStat{cache(hit/miss)=4/0}",
+            rl.access_stat().to_string(),
+            "evitable cursor is updated but not yet evicted by next insert"
         );
 
         rl.read(5, 8).collect::<Result<Vec<_>, _>>()?;
         assert_eq!(
-            "AccessStat{cache(hit/miss)=6/1}",
+            "AccessStat{cache(hit/miss)=7/0}",
             rl.access_stat().to_string()
+        );
+
+        let logs = [
+            //
+            ((2, 8), ss("biubiu")),
+        ];
+        rl.append(logs)?;
+
+        rl.read(5, 9).collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(
+            "AccessStat{cache(hit/miss)=10/1}",
+            rl.access_stat().to_string(),
+            "last insert evicts item"
         );
     }
 
@@ -667,21 +681,23 @@ fn test_read_with_cache() -> Result<(), io::Error> {
         let mut rl = ctx.new_raft_log()?;
         let logs = [
             //
-            ((3, 8), ss("goo")),
+            ((3, 9), ss("goo")),
         ];
         rl.append(logs)?;
 
+        println!("After re-open:\n{}", rl.dump().write_to_string()?);
+
         // present logs: [4, 9): not in cache: 45; in cache: 678
 
-        rl.read(4, 9).collect::<Result<Vec<_>, _>>()?;
+        rl.read(4, 10).collect::<Result<Vec<_>, _>>()?;
         assert_eq!(
-            "AccessStat{cache(hit/miss)=3/2}",
+            "AccessStat{cache(hit/miss)=3/3}",
             rl.access_stat().to_string()
         );
 
-        rl.read(5, 8).collect::<Result<Vec<_>, _>>()?;
+        rl.read(5, 9).collect::<Result<Vec<_>, _>>()?;
         assert_eq!(
-            "AccessStat{cache(hit/miss)=5/3}",
+            "AccessStat{cache(hit/miss)=5/5}",
             rl.access_stat().to_string()
         );
     }
@@ -702,6 +718,15 @@ fn test_read_without_cache() -> Result<(), io::Error> {
         let mut rl = ctx.new_raft_log()?;
         build_sample_data_purge_upto_3(&mut rl)?;
 
+        // Insert to trigger evict
+        let logs = [
+            //
+            ((2, 8), ss("world")),
+        ];
+        rl.append(logs)?;
+
+        println!("after insert:\n{}", rl.dump().write_to_string()?);
+
         let got = rl.read(0, 1000).collect::<Result<Vec<_>, _>>()?;
 
         let logs = [
@@ -710,10 +735,11 @@ fn test_read_without_cache() -> Result<(), io::Error> {
             ((2, 5), ss("foo")),
             ((2, 6), ss("bar")),
             ((2, 7), ss("wow")),
+            ((2, 8), ss("world")),
         ];
         assert_eq!(logs.to_vec(), got);
         assert_eq!(
-            "AccessStat{cache(hit/miss)=1/3}",
+            "AccessStat{cache(hit/miss)=2/3}",
             rl.access_stat().to_string(),
             "logs in open chunk are always cached"
         );
@@ -731,17 +757,18 @@ fn test_read_without_cache() -> Result<(), io::Error> {
             ((2, 5), ss("foo")),
             ((2, 6), ss("bar")),
             ((2, 7), ss("wow")),
+            ((2, 8), ss("world")),
         ];
         assert_eq!(logs.to_vec(), got);
         assert_eq!(
-            "AccessStat{cache(hit/miss)=1/3}",
+            "AccessStat{cache(hit/miss)=2/3}",
             rl.access_stat().to_string(),
-            "the hit is 1 because the last inserted log has not yet evicted by a new insert"
+            "the hit is 2 because the last inserted log has not yet evicted by a new insert, logs in the last closed chunk is still cached"
         );
 
         let logs = [
             //
-            ((3, 8), ss("goo")),
+            ((3, 9), ss("goo")),
         ];
         rl.append(logs)?;
         println!("After append:\n{}", rl.dump().write_to_string()?);
@@ -754,11 +781,12 @@ fn test_read_without_cache() -> Result<(), io::Error> {
             ((2, 5), ss("foo")),
             ((2, 6), ss("bar")),
             ((2, 7), ss("wow")),
-            ((3, 8), ss("goo")),
+            ((2, 8), ss("world")),
+            ((3, 9), ss("goo")),
         ];
         assert_eq!(logs.to_vec(), got);
         assert_eq!(
-            "AccessStat{cache(hit/miss)=2/7}",
+            "AccessStat{cache(hit/miss)=3/8}",
             rl.access_stat().to_string(),
             "another hit on the last log"
         );
@@ -794,8 +822,9 @@ fn test_read_does_not_affect_append() -> Result<(), io::Error> {
         assert_eq!(vec![((1, 0), ss("hi"))], got);
 
         assert_eq!(
-            "AccessStat{cache(hit/miss)=0/3}",
-            rl.access_stat().to_string()
+            "AccessStat{cache(hit/miss)=3/0}",
+            rl.access_stat().to_string(),
+            "all logs in open chunk are cached"
         );
     }
 
@@ -812,13 +841,37 @@ fn test_sync() -> Result<(), io::Error> {
     {
         let mut rl = ctx.new_raft_log()?;
 
-        build_sample_data(&mut rl)?;
+        let logs = [
+            //
+            ((1, 0), ss("hi")),
+            ((1, 1), ss("hello")),
+            ((1, 2), ss("world")),
+            ((1, 3), ss("foo")),
+        ];
+        rl.append(logs)?;
+        rl.truncate(2)?;
+        let logs = [
+            //
+            ((2, 2), ss("world")),
+            ((2, 3), ss("foo")),
+        ];
+        rl.append(logs)?;
+        rl.commit((1, 2))?;
+        rl.purge((1, 1))?;
+        let logs = [
+            //
+            ((2, 4), ss("world")),
+            ((2, 5), ss("foo")),
+            ((2, 6), ss("bar")),
+            ((2, 7), ss("wow")),
+        ];
+        rl.append(logs)?;
 
         let flush_stat = rl.wal.get_stat()?;
         assert_eq!(
-            vec![(324, 402), (509, 0)],
+            vec![(0, 0,), (161, 0,), (324, 0,), (509, 0)],
             flush_stat,
-            "2 chunks(starting offset and synced-offset), partially synced and not synced"
+            "no synced"
         );
 
         blocking_flush(&mut rl)?;
@@ -826,6 +879,21 @@ fn test_sync() -> Result<(), io::Error> {
         let flush_stat = rl.wal.get_stat()?;
         assert_eq!(
             vec![(509, 610)],
+            flush_stat,
+            "4 chunks, all synced, the first 3 are removed"
+        );
+
+        let logs = [
+            //
+            ((2, 8), ss("world")),
+        ];
+
+        rl.append(logs)?;
+        blocking_flush(&mut rl)?;
+
+        let flush_stat = rl.wal.get_stat()?;
+        assert_eq!(
+            vec![(509, 647)],
             flush_stat,
             "4 chunks, all synced, the first 3 are removed"
         );
@@ -900,6 +968,8 @@ fn build_sample_data(rl: &mut RaftLog<TestTypes>) -> Result<String, io::Error> {
         ((2, 7), ss("wow")),
     ];
     rl.append(logs)?;
+
+    blocking_flush(rl)?;
 
     let dumped = indoc! {r#"
         RaftLog:
