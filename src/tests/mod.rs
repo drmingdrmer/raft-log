@@ -1,2 +1,2 @@
-mod test_context;
+pub(crate) mod test_context;
 mod test_raft_log;

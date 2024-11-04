@@ -19,6 +19,7 @@ use crate::file_lock;
 use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
+use crate::raft_log::dump_data::DumpData;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::wal::RaftLogWAL;
@@ -134,6 +135,23 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
 }
 
 impl<T: Types> RaftLog<T> {
+    /// Dump log data
+    pub fn dump_data(&self) -> DumpData<T> {
+        let logs = self.state_machine.log.values().cloned().collect::<Vec<_>>();
+        let cache =
+            self.state_machine.payload_cache.read().unwrap().cache.clone();
+        let chunks = self.wal.closed.clone();
+
+        DumpData {
+            state: self.state_machine.log_state.clone(),
+            logs,
+            cache,
+            chunks,
+            cache_hit: 0,
+            cache_miss: 0,
+        }
+    }
+
     pub fn dump(&self) -> RefDump<'_, T> {
         RefDump {
             config: self.config.clone(),

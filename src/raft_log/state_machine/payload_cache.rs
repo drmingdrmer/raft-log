@@ -7,7 +7,7 @@ pub(crate) struct PayloadCache<T: Types> {
     max_items: usize,
     capacity: usize,
     size: usize,
-    cache: BTreeMap<T::LogId, T::LogPayload>,
+    pub(crate) cache: BTreeMap<T::LogId, T::LogPayload>,
 
     /// The last evictable log id.
     ///

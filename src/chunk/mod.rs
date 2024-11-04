@@ -21,7 +21,7 @@ use crate::Config;
 use crate::Types;
 use crate::WALRecord;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk<T> {
     pub(crate) f: Arc<File>,
 
