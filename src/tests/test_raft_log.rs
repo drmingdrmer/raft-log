@@ -902,6 +902,22 @@ fn test_sync() -> Result<(), io::Error> {
     Ok(())
 }
 
+#[test]
+fn test_on_disk_size() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(5);
+    config.log_cache_capacity = Some(0);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        build_sample_data_purge_upto_3(&mut rl)?;
+        assert_eq!(rl.on_disk_size(), 314);
+    }
+    Ok(())
+}
+
 fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {

@@ -325,4 +325,13 @@ impl<T: Types> RaftLog<T> {
 
         Ok(self.wal.last_segment())
     }
+
+    pub fn on_disk_size(&self) -> u64 {
+        let end = self.wal.open.chunk.global_end();
+        let open_start = self.wal.open.chunk.global_start();
+        let first_closed_start  = self.wal.closed.first_key_value().map(|(_, v)| v.chunk.global_start()).unwrap_or(open_start);
+
+        end- first_closed_start
+
+    }
 }
