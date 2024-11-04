@@ -157,12 +157,12 @@ where T: Types
     ///
     /// This method should always use a newly opened file.
     /// Because `seek` may affect other open file descriptors.
-    pub(crate) fn load_records_iter<'a>(
-        config: &'a Config,
+    pub(crate) fn load_records_iter(
+        config: &Config,
         mut f: Arc<File>,
         chunk_id: ChunkId,
     ) -> Result<
-        impl Iterator<Item = Result<(Segment, WALRecord<T>), io::Error>> + 'a,
+        impl Iterator<Item = Result<(Segment, WALRecord<T>), io::Error>> + '_,
         io::Error,
     > {
         let file_size = f

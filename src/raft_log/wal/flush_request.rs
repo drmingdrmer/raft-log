@@ -1,6 +1,4 @@
-use std::fs::File;
 use std::sync::mpsc::SyncSender;
-use std::sync::Arc;
 
 use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::Types;

@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io;
 use std::sync::mpsc::Receiver;
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::RwLock;
 

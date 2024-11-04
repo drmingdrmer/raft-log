@@ -104,7 +104,7 @@ impl<'a, T: Types> DumpApi<T> for RefDump<'a, T> {
 }
 
 impl<T: Types> Dump<T> {
-    pub(crate) fn new(config: Arc<Config>) -> Result<Self, io::Error> {
+    pub fn new(config: Arc<Config>) -> Result<Self, io::Error> {
         let dir_lock = file_lock::FileLock::new(config.clone())?;
 
         Ok(Self {

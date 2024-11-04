@@ -197,7 +197,7 @@ impl<T: Types> RaftLogState<T> {
         let purged = Some(log_id.clone());
 
         if self.purged < purged {
-            self.purged = purged.clone();
+            self.purged.clone_from(&purged);
         }
 
         if purged > self.last {
