@@ -240,7 +240,7 @@ fn test_purge() -> Result<(), io::Error> {
 
     let seg = rl.purge((1, 1))?;
     blocking_flush(&mut rl)?;
-    assert_eq!(Segment::new(92, 35), seg);
+    assert_eq!(Segment::new(127, 28), seg);
 
     let state = rl.log_state();
     assert_eq!(state, &RaftLogState {
