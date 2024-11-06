@@ -918,6 +918,52 @@ fn test_on_disk_size() -> Result<(), io::Error> {
     Ok(())
 }
 
+#[test]
+fn test_update_state() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(5);
+    config.log_cache_capacity = Some(0);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        build_sample_data_purge_upto_3(&mut rl)?;
+        rl.update_state(RaftLogState {
+            vote: Some((1, 2)),
+            last: Some((3, 4)),
+            committed: None,
+            purged: None,
+            user_data: None,
+        })?;
+
+        assert_eq!(rl.log_state(), &RaftLogState {
+            vote: Some((1, 2)),
+            last: Some((3, 4)),
+            committed: None,
+            purged: None,
+            user_data: None,
+        });
+
+        blocking_flush(&mut rl)?;
+
+        let dump = rl.dump().write_to_string()?;
+        println!("{}", dump);
+    }
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        assert_eq!(rl.log_state(), &RaftLogState {
+            vote: Some((1, 2)),
+            last: Some((3, 4)),
+            committed: None,
+            purged: None,
+            user_data: None,
+        });
+    }
+    Ok(())
+}
+
 fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {

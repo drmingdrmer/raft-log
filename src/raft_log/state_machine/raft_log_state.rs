@@ -92,6 +92,10 @@ impl<T: Types> RaftLogState<T> {
         self.purged.as_ref()
     }
 
+    pub fn set_last(&mut self, log_id: Option<T::LogId>) {
+        self.last = log_id;
+    }
+
     pub(crate) fn apply(
         &mut self,
         rec: &WALRecord<T>,

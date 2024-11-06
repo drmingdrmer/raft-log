@@ -262,6 +262,11 @@ impl<T: Types> RaftLog<T> {
         Ok(chunk_ids)
     }
 
+    pub fn update_state(&mut self, state: RaftLogState<T>)  -> Result<Segment, io::Error>{
+        let record = WALRecord::State(state);
+        self.append_and_apply(&record)
+    }
+
     pub fn read(
         &self,
         from: u64,
