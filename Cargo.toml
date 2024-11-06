@@ -38,4 +38,4 @@ path = "src/bin/bench.rs"
 
 
 [patch.crates-io]
-codeq = { path = "../codeq" }
+# codeq = { path = "../codeq" }
