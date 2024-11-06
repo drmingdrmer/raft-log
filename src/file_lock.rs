@@ -4,6 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 use fs2::FileExt;
+use log::info;
 
 use crate::Config;
 
@@ -38,7 +39,7 @@ impl FileLock {
             )
         })?;
 
-        println!(
+        info!(
             "Directory lock acquired: {}",
             Self::lock_path(config.as_ref())
         );
@@ -54,7 +55,7 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         let _ = self.f.unlock();
-        println!(
+        info!(
             "Directory lock released: {}",
             Self::lock_path(self.config.as_ref())
         );

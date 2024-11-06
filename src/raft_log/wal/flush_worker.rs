@@ -4,6 +4,8 @@ use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+use log::debug;
+
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushRequest;
@@ -101,7 +103,7 @@ impl<T: Types> FlushWorker<T> {
                 };
             }
 
-            println!("batched flush: {}", batch.len());
+            debug!("batched flush: {}", batch.len());
 
             {
                 let last_flush = batch.last().unwrap();
@@ -185,10 +187,6 @@ impl<T: Types> FlushWorker<T> {
 
         {
             let mut cache = self.cache.write().unwrap();
-            // println!(
-            //     "FlushWorker set last_evictable: {:?}; starting_offset: {}",
-            //     f.first_log_id, f.starting_offset
-            // );
             cache.set_last_evictable(f.first_log_id.clone());
         }
 
