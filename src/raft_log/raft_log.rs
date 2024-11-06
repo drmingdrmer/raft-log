@@ -16,6 +16,7 @@ use crate::chunk::Chunk;
 use crate::errors::LogIndexNotFound;
 use crate::errors::RaftLogStateError;
 use crate::file_lock;
+use crate::file_lock::FileLock;
 use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
@@ -240,6 +241,10 @@ impl<T: Types> RaftLog<T> {
             let file_name = entry.file_name();
 
             let fn_str = file_name.to_string_lossy();
+            if fn_str == FileLock::LOCK_FILE_NAME {
+                continue;
+            }
+
             let res = Config::parse_chunk_file_name(&fn_str);
 
             match res {

@@ -14,6 +14,8 @@ pub(crate) struct FileLock {
 }
 
 impl FileLock {
+    pub const LOCK_FILE_NAME: &'static str = "LOCK";
+
     pub(crate) fn new(config: Arc<Config>) -> Result<Self, io::Error> {
         let path = Self::lock_path(config.as_ref());
 
@@ -45,7 +47,7 @@ impl FileLock {
     }
 
     pub(crate) fn lock_path(config: &Config) -> String {
-        format!("{}/{}", config.dir, "LOCK")
+        format!("{}/{}", config.dir, Self::LOCK_FILE_NAME)
     }
 }
 
