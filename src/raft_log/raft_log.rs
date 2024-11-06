@@ -262,7 +262,10 @@ impl<T: Types> RaftLog<T> {
         Ok(chunk_ids)
     }
 
-    pub fn update_state(&mut self, state: RaftLogState<T>)  -> Result<Segment, io::Error>{
+    pub fn update_state(
+        &mut self,
+        state: RaftLogState<T>,
+    ) -> Result<Segment, io::Error> {
         let record = WALRecord::State(state);
         self.append_and_apply(&record)
     }
@@ -334,9 +337,13 @@ impl<T: Types> RaftLog<T> {
     pub fn on_disk_size(&self) -> u64 {
         let end = self.wal.open.chunk.global_end();
         let open_start = self.wal.open.chunk.global_start();
-        let first_closed_start  = self.wal.closed.first_key_value().map(|(_, v)| v.chunk.global_start()).unwrap_or(open_start);
+        let first_closed_start = self
+            .wal
+            .closed
+            .first_key_value()
+            .map(|(_, v)| v.chunk.global_start())
+            .unwrap_or(open_start);
 
-        end- first_closed_start
-
+        end - first_closed_start
     }
 }
