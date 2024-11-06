@@ -13,7 +13,7 @@ use crate::api::raft_log_writer::blocking_flush;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::chunk::Chunk;
 use crate::raft_log::dump::Dump;
-use crate::raft_log::dump::DumpApi;
+use crate::raft_log::dump_api::DumpApi;
 use crate::raft_log::raft_log::RaftLog;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::testing::ss;
@@ -952,7 +952,7 @@ fn test_update_state() -> Result<(), io::Error> {
     }
 
     {
-        let mut rl = ctx.new_raft_log()?;
+        let rl = ctx.new_raft_log()?;
         assert_eq!(rl.log_state(), &RaftLogState {
             vote: Some((1, 2)),
             last: Some((3, 4)),

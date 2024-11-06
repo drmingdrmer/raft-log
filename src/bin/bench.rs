@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use std::io;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -69,7 +71,7 @@ fn test_bench_raft_log() -> Result<(), io::Error> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         rl.flush(tx)?;
 
-        // rx.recv().unwrap()?;
+        rx.recv().unwrap()?;
 
         if index > 0 && index % step == 0 {
             println!("index: {}", index);
