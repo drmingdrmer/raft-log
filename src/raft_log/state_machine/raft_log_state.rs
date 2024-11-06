@@ -152,15 +152,20 @@ impl<T: Types> RaftLogState<T> {
             .into());
         }
 
-        let expected = T::next_log_index(self.last.as_ref());
-        let this_index = T::log_index(log_id);
+        // Do not check for consecutive log_id if last is None;
+        // Because it's common to append the first log with non-zero index,
+        // such as, when restoring a RaftLog.
+        if self.last.is_some() {
+            let expected = T::next_log_index(self.last.as_ref());
+            let this_index = T::log_index(log_id);
 
-        if expected != this_index {
-            return Err(LogIdNonConsecutive::new(
-                self.last.clone(),
-                log_id.clone(),
-            )
-            .into());
+            if expected != this_index {
+                return Err(LogIdNonConsecutive::new(
+                    self.last.clone(),
+                    log_id.clone(),
+                )
+                .into());
+            }
         }
 
         self.last = Some(log_id.clone());

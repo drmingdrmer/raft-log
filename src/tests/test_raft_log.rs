@@ -238,6 +238,22 @@ fn test_purge() -> Result<(), io::Error> {
 
     //
 
+    let seg = rl.purge((1, 1))?;
+    blocking_flush(&mut rl)?;
+    assert_eq!(Segment::new(92, 35), seg);
+
+    let state = rl.log_state();
+    assert_eq!(state, &RaftLogState {
+        last: Some((1, 3)),
+        purged: Some((1, 1)),
+        ..RaftLogState::default()
+    });
+
+    let got = rl.read(0, 5).collect::<Result<Vec<_>, io::Error>>()?;
+    assert_eq!(logs[1..=2].to_vec(), got);
+
+    //
+
     rl.purge((1, 2))?;
     blocking_flush(&mut rl)?;
 
