@@ -84,7 +84,7 @@ impl<T> Chunk<T> {
             .read(true)
             .write(true)
             .open(path)
-            .context(format_args!("open {}", chunk_id))?;
+            .context(|| format!("open {}", chunk_id))?;
 
         Ok(f)
     }
@@ -167,9 +167,9 @@ where T: Types
     > {
         let file_size = f
             .seek(io::SeekFrom::End(0))
-            .context(format_args!("seek end of {chunk_id}"))?;
+            .context(|| format!("seek end of {chunk_id}"))?;
         f.seek(io::SeekFrom::Start(0))
-            .context(format_args!("seek start of {chunk_id}"))?;
+            .context(|| format!("seek start of {chunk_id}"))?;
 
         let br = io::BufReader::with_capacity(config.read_buffer_size(), f);
         Ok(RecordIterator::new(br, file_size, chunk_id))
@@ -184,10 +184,8 @@ where T: Types
 
         let br = io::BufReader::with_capacity(16 * 1024, f);
 
-        WALRecord::<T>::decode(br).context(format_args!(
-            "decode Record {:?} in {}",
-            segment,
-            self.chunk_id()
-        ))
+        WALRecord::<T>::decode(br).context(|| {
+            format!("decode Record {:?} in {}", segment, self.chunk_id())
+        })
     }
 }

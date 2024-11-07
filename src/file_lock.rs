@@ -3,6 +3,7 @@ use std::fs::OpenOptions;
 use std::io;
 use std::sync::Arc;
 
+use codeq::error_context_ext::ErrorContextExt;
 use fs2::FileExt;
 use log::info;
 
@@ -25,7 +26,8 @@ impl FileLock {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(path)?;
+            .open(&path)
+            .context(|| format!("create lock file '{}'", path))?;
 
         f.try_lock_exclusive().map_err(|e| {
             io::Error::new(

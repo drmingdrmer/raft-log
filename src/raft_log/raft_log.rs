@@ -4,6 +4,7 @@ use std::io::Error;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use codeq::error_context_ext::ErrorContextExt;
 use codeq::OffsetSize;
 use codeq::Segment;
 
@@ -165,7 +166,8 @@ impl<T: Types> RaftLog<T> {
     }
 
     pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
-        let dir_lock = file_lock::FileLock::new(config.clone())?;
+        let dir_lock = file_lock::FileLock::new(config.clone())
+            .context(|| format!("open RaftLog in '{}'", config.dir))?;
 
         let offsets = Self::load_chunk_ids(&config)?;
 

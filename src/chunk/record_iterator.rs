@@ -63,8 +63,8 @@ where
                     r,
                 )
             })
-            .context(format_args!("decode Record at offset {}", start))
-            .context(format_args!("iterate {}", self.chunk_id));
+            .context(|| format!("decode Record at offset {}", start))
+            .context(|| format!("iterate {}", self.chunk_id));
 
         if let Err(ref e) = res {
             self.error = Some(io::Error::new(e.kind(), e.to_string()));
