@@ -1057,6 +1057,34 @@ fn test_open_new_chunk_size() -> Result<(), io::Error> {
     Ok(())
 }
 
+#[test]
+fn test_stat() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(5);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        build_sample_data(&mut rl)?;
+
+        let stat = rl.stat();
+        let want = indoc! {r#"
+        Stat{
+         closed_chunks: [
+          ChunkStat(ChunkId(00_000_000_000_000_000_000)){records: 5, [000_000_000, 000_000_161), size: 000_000_161, log_state: RaftLogState { vote: None, last: Some((1, 3)), committed: None, purged: None, user_data: None }},
+          ChunkStat(ChunkId(00_000_000_000_000_000_161)){records: 5, [000_000_161, 000_000_324), size: 000_000_163, log_state: RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None }},
+          ChunkStat(ChunkId(00_000_000_000_000_000_324)){records: 5, [000_000_324, 000_000_509), size: 000_000_185, log_state: RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }}
+         ],
+         open_chunk: ChunkStat(ChunkId(00_000_000_000_000_000_509)){records: 2, [000_000_509, 000_000_610), size: 000_000_101, log_state: RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }},
+         payload_cache:{item_count: 000_000_008,max_item: 000_100_000,size: 000_000_029,capacity: 1_073_741_824,miss: 000_000_000,hit: 000_000_000}
+        }"#};
+        assert_eq!(want, format!("{:#}", stat));
+    }
+
+    Ok(())
+}
+
 fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {

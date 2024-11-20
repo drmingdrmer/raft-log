@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::File;
 use std::io;
 use std::sync::mpsc::Receiver;
@@ -5,10 +6,12 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use log::debug;
+use log::info;
 
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushRequest;
+use crate::ChunkId;
 use crate::Types;
 
 pub(crate) struct FileEntry<T: Types> {
@@ -20,6 +23,20 @@ pub(crate) struct FileEntry<T: Types> {
     pub(crate) first_log_id: Option<T::LogId>,
     /// for debug
     pub(crate) sync_id: u64,
+}
+
+impl<T> fmt::Display for FileEntry<T>
+where T: Types
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "FileEntry{{ starting_offset: {}, first_log_id: {:?} sync_id: {} }}",
+            ChunkId(self.starting_offset),
+            self.first_log_id,
+            self.sync_id
+        )
+    }
 }
 
 impl<T: Types> FileEntry<T> {
@@ -145,6 +162,7 @@ impl<T: Types> FlushWorker<T> {
     ) -> Result<(), io::Error> {
         match req {
             FlushRequest::AppendFile(file_entry) => {
+                info!("FlushWorker: AppendFile: {}", file_entry);
                 self.files.push(file_entry);
             }
             FlushRequest::Flush(_) => {
@@ -159,6 +177,7 @@ impl<T: Types> FlushWorker<T> {
                 let _ = tx.send(stat);
             }
             FlushRequest::RemoveChunks { chunk_paths } => {
+                info!("FlushWorker: RemoveChunks: {:?}", chunk_paths);
                 for path in chunk_paths {
                     std::fs::remove_file(path)?;
                 }

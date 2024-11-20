@@ -7,6 +7,7 @@ use std::sync::Arc;
 use codeq::error_context_ext::ErrorContextExt;
 use codeq::OffsetSize;
 use codeq::Segment;
+use log::info;
 
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::state_machine::StateMachine;
@@ -22,6 +23,8 @@ use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
 use crate::raft_log::dump_data::DumpData;
+use crate::raft_log::stat::ChunkStat;
+use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::wal::RaftLogWAL;
@@ -46,7 +49,7 @@ pub struct RaftLog<T: Types> {
     /// is flushed to disk.
     removed_chunks: Vec<String>,
 
-    state: AccessStat,
+    access_stat: AccessStat,
 }
 
 impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
@@ -95,6 +98,11 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
 
         let purged = self.log_state().purged.as_ref();
 
+        info!(
+            "RaftLog purge upto: {:?}; current purged: {:?}",
+            upto, purged
+        );
+
         if T::log_index(&upto) < T::next_log_index(purged) {
             return Ok(self.wal.last_segment());
         }
@@ -113,6 +121,10 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             }
             let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();
             let path = self.config.chunk_path(chunk_id);
+            info!(
+                "RaftLog: scheduled to remove chunk after next flush: {}",
+                path
+            );
             self.removed_chunks.push(path);
         }
 
@@ -227,7 +239,7 @@ impl<T: Types> RaftLog<T> {
             _dir_lock: dir_lock,
             state_machine: sm,
             wal,
-            state: Default::default(),
+            access_stat: Default::default(),
             removed_chunks: vec![],
         };
 
@@ -290,10 +302,10 @@ impl<T: Types> RaftLog<T> {
                 self.state_machine.payload_cache.read().unwrap().get(&log_id);
 
             let payload = if let Some(payload) = payload {
-                self.state.cache_hit.fetch_add(1, Ordering::Relaxed);
+                self.access_stat.cache_hit.fetch_add(1, Ordering::Relaxed);
                 payload
             } else {
-                self.state.cache_miss.fetch_add(1, Ordering::Relaxed);
+                self.access_stat.cache_miss.fetch_add(1, Ordering::Relaxed);
                 self.wal.load_log_payload(log_data)?
             };
 
@@ -310,8 +322,43 @@ impl<T: Types> RaftLog<T> {
         &mut self.state_machine.log_state
     }
 
+    pub fn stat(&self) -> Stat<T> {
+        let closed =
+            self.wal.closed.values().map(|c| c.stat()).collect::<Vec<_>>();
+
+        let open = &self.wal.open;
+        let open_stat = ChunkStat {
+            chunk_id: open.chunk.chunk_id(),
+            records_count: open.chunk.records_count() as u64,
+            global_start: open.chunk.global_start(),
+            global_end: open.chunk.global_end(),
+            size: open.chunk.chunk_size(),
+            log_state: self.log_state().clone(),
+        };
+        let cache = self.state_machine.payload_cache.read().unwrap();
+
+        Stat {
+            closed_chunks: closed,
+            open_chunk: open_stat,
+
+            payload_cache_item_count: cache.item_count() as u64,
+            payload_cache_max_item: cache.max_items() as u64,
+            payload_cache_size: cache.total_size() as u64,
+            payload_cache_capacity: cache.capacity() as u64,
+
+            payload_cache_miss: self
+                .access_stat
+                .cache_miss
+                .load(Ordering::Relaxed),
+            payload_cache_hit: self
+                .access_stat
+                .cache_hit
+                .load(Ordering::Relaxed),
+        }
+    }
+
     pub fn access_stat(&self) -> &AccessStat {
-        &self.state
+        &self.access_stat
     }
 
     fn get_log_id(&self, index: u64) -> Result<T::LogId, RaftLogStateError<T>> {

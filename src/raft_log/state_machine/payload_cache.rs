@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use log::info;
+
 use crate::Types;
 
 #[derive(Debug)]
@@ -27,18 +29,24 @@ impl<T: Types> PayloadCache<T> {
     }
 
     pub(crate) fn set_last_evictable(&mut self, log_id: Option<T::LogId>) {
-        // println!("set_last_evictable: {:?}", log_id);
+        info!("RaftLog payload cache: set_last_evictable: {:?}", log_id);
         self.last_evictable = log_id;
     }
 
-    #[allow(dead_code)]
     pub(crate) fn item_count(&self) -> usize {
         self.cache.len()
     }
 
-    #[allow(dead_code)]
+    pub(crate) fn max_items(&self) -> usize {
+        self.max_items
+    }
+
     pub(crate) fn total_size(&self) -> usize {
         self.size
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub(crate) fn insert(&mut self, key: T::LogId, value: T::LogPayload) {
