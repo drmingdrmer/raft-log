@@ -17,6 +17,8 @@ pub use api::types::Types;
 pub use chunk::chunk_id::ChunkId;
 pub use codeq::Segment;
 pub use config::Config;
+pub use raft_log::stat::ChunkStat;
+pub use raft_log::stat::Stat;
 pub use raft_log::wal::callback::Callback;
 
 pub use self::raft_log::dump::Dump;
