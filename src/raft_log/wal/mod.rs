@@ -11,6 +11,7 @@ use std::sync::RwLock;
 use codeq::OffsetSize;
 use codeq::Segment;
 pub(crate) use flush_request::FlushRequest;
+use log::info;
 
 use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
@@ -131,7 +132,7 @@ where T: Types
 
     pub(crate) fn is_open_chunk_full(&self) -> bool {
         self.open.chunk.records_count() >= self.config.chunk_max_records()
-            || (self.open.chunk.last_segment().end() as usize)
+            || (self.open.chunk.chunk_size() as usize)
                 >= self.config.chunk_max_size()
     }
 
@@ -145,6 +146,12 @@ where T: Types
 
         let config = self.config.clone();
         let offset = self.open.chunk.last_segment().end();
+
+        info!(
+            "Closing full chunk: {}, open new: {}",
+            self.open.chunk.chunk_id(),
+            ChunkId(offset)
+        );
 
         let state = get_state();
 

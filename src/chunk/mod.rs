@@ -55,6 +55,10 @@ impl<T> Chunk<T> {
         Segment::new(start, end - start)
     }
 
+    pub(crate) fn chunk_size(&self) -> u64 {
+        self.end_offset()
+    }
+
     #[allow(dead_code)]
     pub(crate) fn end_offset(&self) -> u64 {
         self.global_offsets[self.global_offsets.len() - 1]

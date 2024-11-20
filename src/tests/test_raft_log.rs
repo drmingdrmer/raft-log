@@ -980,6 +980,83 @@ fn test_update_state() -> Result<(), io::Error> {
     Ok(())
 }
 
+#[test]
+fn test_open_new_chunk_size() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(10000);
+    config.chunk_max_size = Some(150);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+
+        let logs = [
+            //
+            ((1, 0), ss("hi")),
+            ((1, 1), ss("hello")),
+            ((1, 2), ss("world")),
+            ((1, 3), ss("foo")),
+        ];
+        rl.append(logs)?;
+
+        rl.truncate(2)?;
+
+        let logs = [
+            //
+            ((2, 2), ss("world")),
+            ((2, 3), ss("foo")),
+        ];
+        rl.append(logs)?;
+
+        rl.commit((1, 2))?;
+        rl.purge((1, 1))?;
+        blocking_flush(&mut rl)?;
+
+        let logs = [
+            //
+            ((2, 4), ss("world")),
+            ((2, 5), ss("foo")),
+            ((2, 6), ss("bar")),
+            ((2, 7), ss("wow")),
+        ];
+        rl.append(logs)?;
+
+        blocking_flush(&mut rl)?;
+
+        let want_dumped = indoc! {r#"
+        RaftLog:
+        ChunkId(00_000_000_000_000_000_000)
+          R-00000: [000_000_000, 000_000_018) 18: State(RaftLogState { vote: None, last: None, committed: None, purged: None, user_data: None })
+          R-00001: [000_000_018, 000_000_052) 34: Append((1, 0), "hi")
+          R-00002: [000_000_052, 000_000_089) 37: Append((1, 1), "hello")
+          R-00003: [000_000_089, 000_000_126) 37: Append((1, 2), "world")
+          R-00004: [000_000_126, 000_000_161) 35: Append((1, 3), "foo")
+        ChunkId(00_000_000_000_000_000_161)
+          R-00000: [000_000_000, 000_000_034) 34: State(RaftLogState { vote: None, last: Some((1, 3)), committed: None, purged: None, user_data: None })
+          R-00001: [000_000_034, 000_000_063) 29: TruncateAfter(Some((1, 1)))
+          R-00002: [000_000_063, 000_000_100) 37: Append((2, 2), "world")
+          R-00003: [000_000_100, 000_000_135) 35: Append((2, 3), "foo")
+          R-00004: [000_000_135, 000_000_163) 28: Commit((1, 2))
+        ChunkId(00_000_000_000_000_000_324)
+          R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+          R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
+          R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
+          R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
+        ChunkId(00_000_000_000_000_000_474)
+          R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 5)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+          R-00001: [000_000_066, 000_000_101) 35: Append((2, 6), "bar")
+          R-00002: [000_000_101, 000_000_136) 35: Append((2, 7), "wow")
+        "#};
+
+        let dump = rl.dump().write_to_string()?;
+        println!("actual:\n{}", dump);
+        assert_eq!(want_dumped, dump);
+    }
+
+    Ok(())
+}
+
 fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {
