@@ -23,6 +23,8 @@ pub use raft_log::wal::callback::Callback;
 
 pub use self::raft_log::dump::Dump;
 pub use self::raft_log::dump_api::DumpApi;
+pub use self::raft_log::dump_raft_log::DumpRaftLog;
+pub use self::raft_log::dump_raft_log::DumpRaftLogIter;
 pub use self::raft_log::raft_log::RaftLog;
 pub use self::raft_log::wal::wal_record::WALRecord;
 

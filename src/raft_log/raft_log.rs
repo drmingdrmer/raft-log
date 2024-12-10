@@ -22,7 +22,7 @@ use crate::file_lock::FileLock;
 use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
-use crate::raft_log::dump_data::DumpData;
+use crate::raft_log::dump_raft_log::DumpRaftLog;
 use crate::raft_log::stat::ChunkStat;
 use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
@@ -33,6 +33,15 @@ use crate::Config;
 use crate::Types;
 use crate::WALRecord;
 
+/// RaftLog is a Write-Ahead-Log implementation for the Raft consensus protocol.
+///
+/// It provides persistent storage for Raft log entries and state, with the
+/// following features:
+/// - Append-only log storage with chunk-based organization
+/// - In-memory caching of log payloads
+/// - Exclusive file locking for thread-safe operations
+/// - Support for log truncation and purging
+/// - Statistics tracking for monitoring
 #[derive(Debug)]
 pub struct RaftLog<T: Types> {
     pub(crate) config: Arc<Config>,
@@ -150,13 +159,13 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
 
 impl<T: Types> RaftLog<T> {
     /// Dump log data
-    pub fn dump_data(&self) -> DumpData<T> {
+    pub fn dump_data(&self) -> DumpRaftLog<T> {
         let logs = self.state_machine.log.values().cloned().collect::<Vec<_>>();
         let cache =
             self.state_machine.payload_cache.read().unwrap().cache.clone();
         let chunks = self.wal.closed.clone();
 
-        DumpData {
+        DumpRaftLog {
             state: self.state_machine.log_state.clone(),
             logs,
             cache,
@@ -177,6 +186,19 @@ impl<T: Types> RaftLog<T> {
         self.config.as_ref()
     }
 
+    /// Opens a RaftLog at the specified directory.
+    ///
+    /// This operation:
+    /// 1. Acquires an exclusive lock on the directory
+    /// 2. Loads existing chunks in order
+    /// 3. Replays WAL records to rebuild the state
+    /// 4. Creates a new open chunk for future writes
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Directory operations fail
+    /// - There are gaps between chunk offsets
+    /// - WAL records are invalid
     pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
         let dir_lock = file_lock::FileLock::new(config.clone())
             .context(|| format!("open RaftLog in '{}'", config.dir))?;
@@ -289,6 +311,10 @@ impl<T: Types> RaftLog<T> {
         self.append_and_apply(&record)
     }
 
+    /// Reads log entries in the specified index range.
+    ///
+    /// Returns an iterator over log entries, attempting to serve them from
+    /// cache first, falling back to disk reads if necessary.
     pub fn read(
         &self,
         from: u64,
@@ -388,6 +414,10 @@ impl<T: Types> RaftLog<T> {
         Ok(self.wal.last_segment())
     }
 
+    /// Returns the current size of the log on disk in bytes.
+    ///
+    /// This includes all closed chunks and the open chunk, measuring from the
+    /// start of the earliest chunk to the end of the open chunk.
     pub fn on_disk_size(&self) -> u64 {
         let end = self.wal.open.chunk.global_end();
         let open_start = self.wal.open.chunk.global_start();

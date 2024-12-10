@@ -9,17 +9,33 @@ use codeq::ChecksumWriter;
 use crate::api::types::Types;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
+/// WALRecord represents different types of records that can be written to the
+/// Write-Ahead Log (WAL).
+/// Each variant corresponds to a specific operation in the Raft protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WALRecord<T: Types> {
+    /// Save vote change.
     SaveVote(T::Vote),
+
+    /// Append new log entry.
     Append(T::LogId, T::LogPayload),
+
+    /// Save committed log id.
     Commit(T::LogId),
+
+    /// Truncate log entries after the specified log id.
     TruncateAfter(Option<T::LogId>),
+
+    /// Purge log entries up to (and including) the specified log id.
     PurgeUpto(T::LogId),
+
+    /// Save a snapshot of the complete state of the Raft log.
     State(RaftLogState<T>),
 }
 
 impl<T: Types> WALRecord<T> {
+    /// Returns the numeric type identifier for this record
+    /// Used during encoding and decoding.
     pub(crate) fn record_type(&self) -> u32 {
         match self {
             WALRecord::SaveVote(_) => 0,
@@ -32,6 +48,11 @@ impl<T: Types> WALRecord<T> {
     }
 }
 
+/// Implements encoding for WALRecord
+/// Each record is encoded as:
+/// - 4 bytes: record type
+/// - variable bytes: record payload
+/// - 4 bytes: checksum
 impl<T: Types> codeq::Encode for WALRecord<T> {
     fn encode<W: io::Write>(&self, mut w: W) -> Result<usize, io::Error> {
         let mut n = 0;
@@ -63,6 +84,8 @@ impl<T: Types> codeq::Encode for WALRecord<T> {
     }
 }
 
+/// Implements decoding for WALRecord
+/// Reads the record type, payload, and verifies the checksum
 impl<T: Types> codeq::Decode for WALRecord<T> {
     fn decode<R: io::Read>(r: R) -> Result<Self, io::Error> {
         let mut cr = ChecksumReader::new(r);

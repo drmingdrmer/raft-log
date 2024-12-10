@@ -8,7 +8,11 @@ use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
 
-pub struct DumpData<T: Types> {
+/// A struct that contains a snapshot of RaftLog data for inspection or
+/// debugging.
+///
+/// It includes the log state, log entries, cache entries and closed chunks.
+pub struct DumpRaftLog<T: Types> {
     pub(crate) state: RaftLogState<T>,
 
     pub(crate) logs: Vec<LogData<T>>,
@@ -19,22 +23,43 @@ pub struct DumpData<T: Types> {
     pub(crate) cache_miss: usize,
 }
 
-impl<T: Types> DumpData<T> {
+impl<T: Types> DumpRaftLog<T> {
+    /// Returns a reference to the RaftLog state machine state
     pub fn state(&self) -> &RaftLogState<T> {
         &self.state
     }
 
-    pub fn iter(&mut self) -> DumpDataIter<T> {
-        DumpDataIter { i: 0, data: self }
+    /// Returns an iterator that yields log entries in order
+    ///
+    /// The iterator yields Result<(log_id, payload), io::Error> pairs. The
+    /// payload is retrieved either from cache or by reading from the
+    /// underlying chunk storage.
+    pub fn iter(&mut self) -> DumpRaftLogIter<T> {
+        DumpRaftLogIter { i: 0, data: self }
     }
 }
 
-pub struct DumpDataIter<'a, T: Types> {
+/// An iterator over log entries in a DumpData
+///
+/// It yields Result<(log_id, payload), io::Error> pairs. The payload is
+/// retrieved either from cache or by reading from the underlying chunk storage.
+///
+/// # Errors
+/// The iterator may return io::Error if:
+/// - The chunk containing a log entry is not found
+/// - There is an error reading a record from storage
+pub struct DumpRaftLogIter<'a, T: Types> {
     i: usize,
-    data: &'a mut DumpData<T>,
+    data: &'a mut DumpRaftLog<T>,
 }
 
 impl<T: Types> DumpDataIter<'_, T> {
+    /// Reads a log payload from the chunk storage
+    ///
+    /// # Errors
+    /// Returns io::Error if:
+    /// - The chunk is not found
+    /// - There is an error reading the record
     fn read_log_payload(
         &self,
         data: &LogData<T>,

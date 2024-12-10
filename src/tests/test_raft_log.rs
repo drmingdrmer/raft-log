@@ -666,7 +666,7 @@ Error: crc32 checksum mismatch: expected fd59b8d, got 0, while Record::decode();
 }
 
 /// A damaged last record of non-last chunk will not be truncated, but is
-/// considered a damage.
+/// considered damage.
 #[test]
 fn test_re_open_unfinished_non_last_chunk() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;

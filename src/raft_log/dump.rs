@@ -13,6 +13,10 @@ use crate::RaftLog;
 use crate::Types;
 use crate::WALRecord;
 
+/// A dump utility that reads WAL records from disk.
+///
+/// It acquires an exclusive lock on the directory to prevent concurrent writes
+/// while reading.
 pub struct Dump<T> {
     config: Arc<Config>,
 
@@ -23,6 +27,17 @@ pub struct Dump<T> {
 }
 
 impl<T: Types> DumpApi<T> for Dump<T> {
+    /// Reads all WAL records from disk and passes them to the provided callback
+    /// function.
+    ///
+    /// The callback receives:
+    /// - `chunk_id`: The ID of the chunk containing the record
+    /// - `index`: The 0-based index of the record within its chunk
+    /// - `result`: The result containing either the record data or an IO error
+    ///
+    /// # Errors
+    /// Returns an IO error if reading the chunks fails or if the callback
+    /// returns an error.
     fn write_with<D>(&self, mut write_record: D) -> Result<(), io::Error>
     where D: FnMut(
             ChunkId,
@@ -42,13 +57,27 @@ impl<T: Types> DumpApi<T> for Dump<T> {
     }
 }
 
+/// A dump utility that reads WAL records from an existing RaftLog instance.
+///
+/// Unlike [`Dump`], this does not acquire a directory lock since it operates on
+/// an already initialized RaftLog.
 pub struct RefDump<'a, T: Types> {
     pub(crate) config: Arc<Config>,
-
     pub(crate) raft_log: &'a RaftLog<T>,
 }
 
 impl<T: Types> DumpApi<T> for RefDump<'_, T> {
+    /// Reads all WAL records from the RaftLog and passes them to the provided
+    /// callback function.
+    ///
+    /// The callback receives:
+    /// - `chunk_id`: The ID of the chunk containing the record
+    /// - `index`: The 0-based index of the record within its chunk
+    /// - `result`: The result containing either the record data or an IO error
+    ///
+    /// # Errors
+    /// Returns an IO error if reading the chunks fails or if the callback
+    /// returns an error.
     fn write_with<D>(&self, mut write_record: D) -> Result<(), Error>
     where D: FnMut(
             ChunkId,
@@ -80,6 +109,10 @@ impl<T: Types> DumpApi<T> for RefDump<'_, T> {
 }
 
 impl<T: Types> Dump<T> {
+    /// Creates a new Dump instance with the given configuration.
+    ///
+    /// # Errors
+    /// Returns an IO error if acquiring the directory lock fails.
     pub fn new(config: Arc<Config>) -> Result<Self, io::Error> {
         let dir_lock = file_lock::FileLock::new(config.clone())?;
 

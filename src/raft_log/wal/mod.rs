@@ -29,6 +29,11 @@ use crate::WALRecord;
 
 pub(crate) mod wal_record;
 
+/// Write-ahead log implementation for the Raft log.
+///
+/// This WAL implementation manages both open and closed chunks of data.
+/// An open chunk is actively being written to, while closed chunks are immutable
+/// and may be used for reading historical data.
 #[derive(Debug)]
 pub(crate) struct RaftLogWAL<T>
 where T: Types
@@ -43,6 +48,14 @@ where T: Types
 impl<T> RaftLogWAL<T>
 where T: Types
 {
+    /// Creates a new RaftLogWAL instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration for the WAL
+    /// * `closed` - Map of closed (immutable) chunks indexed by chunk ID
+    /// * `open` - The currently active chunk that can be written to
+    /// * `cache` - Cache for storing log payloads
     pub(crate) fn new(
         config: Arc<Config>,
         closed: BTreeMap<ChunkId, ClosedChunk<T>>,
@@ -73,6 +86,15 @@ where T: Types
         }
     }
 
+    /// Sends a flush request to ensure data is persisted to disk.
+    ///
+    /// # Arguments
+    ///
+    /// * `callback` - Callback to be executed after the flush completes
+    ///
+    /// # Errors
+    ///
+    /// Returns an IO error if the flush request cannot be sent
     pub(crate) fn send_flush(
         &self,
         callback: T::Callback,
@@ -89,6 +111,16 @@ where T: Types
                 )
             })
     }
+
+    /// Requests removal of specified chunk files.
+    ///
+    /// # Arguments
+    ///
+    /// * `chunk_paths` - Paths of chunk files to be removed
+    ///
+    /// # Errors
+    ///
+    /// Returns an IO error if the remove request cannot be sent
     pub(crate) fn send_remove_chunks(
         &self,
         chunk_paths: Vec<String>,
@@ -130,12 +162,28 @@ where T: Types
         )
     }
 
+    /// Checks if the current open chunk has reached its capacity.
+    ///
+    /// Returns true if either the maximum number of records or maximum chunk size is reached.
     pub(crate) fn is_open_chunk_full(&self) -> bool {
         self.open.chunk.records_count() >= self.config.chunk_max_records()
             || (self.open.chunk.chunk_size() as usize)
                 >= self.config.chunk_max_size()
     }
 
+    /// Attempts to close the current chunk if it's full and creates a new open chunk.
+    ///
+    /// # Arguments
+    ///
+    /// * `get_state` - Function to retrieve the current Raft log state. This function is necessary because the state is not stored in the WAL.
+    ///
+    /// # Returns
+    ///
+    /// Returns Some(RaftLogState) if a chunk was closed, None otherwise
+    ///
+    /// # Errors
+    ///
+    /// Returns an IO error if chunk operations fail
     pub(crate) fn try_close_full_chunk(
         &mut self,
         get_state: impl FnOnce() -> RaftLogState<T>,
@@ -185,6 +233,19 @@ where T: Types
         Ok(Some(state))
     }
 
+    /// Loads the payload for a given log entry.
+    ///
+    /// # Arguments
+    ///
+    /// * `log_data` - Metadata about the log entry to load
+    ///
+    /// # Returns
+    ///
+    /// Returns the log payload if found
+    ///
+    /// # Errors
+    ///
+    /// Returns an IO error if the chunk is not found or reading fails
     pub(crate) fn load_log_payload(
         &self,
         log_data: &LogData<T>,

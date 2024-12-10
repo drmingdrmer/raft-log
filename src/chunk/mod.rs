@@ -1,3 +1,14 @@
+//! Manages the creation, opening, and management of log chunks.
+//!
+//! A chunk is a segment of the Write-Ahead Log (WAL) that contains a sequence
+//! of records. Chunks are used to:
+//! - Break down large logs into manageable pieces
+//! - Enable efficient record lookup and iteration
+//! - Support log truncation and cleanup
+//!
+//! Each chunk maintains its position in the global log using absolute offsets,
+//! which allows for consistent addressing regardless of chunk boundaries.
+
 pub(crate) mod chunk_id;
 pub(crate) mod closed_chunk;
 pub(crate) mod open_chunk;
@@ -25,22 +36,30 @@ use crate::Config;
 use crate::Types;
 use crate::WALRecord;
 
+/// Represents a chunk of the Write-Ahead Log containing a sequence of records.
+///
+/// A chunk maintains:
+/// - A file handle for persistent storage
+/// - Global offsets for all records it contains
+/// - Metadata about its position in the complete log
 #[derive(Debug, Clone)]
 pub struct Chunk<T> {
+    /// File handle for the chunk's persistent storage
     pub(crate) f: Arc<File>,
 
-    /// The **global** offset of each record in the file.
+    /// The global offsets of each record in the file.
     ///
-    /// There are N.O. records + 1 offsets. The last one is the length of the
-    /// file.
-    ///
-    /// Global offset means the offset since the first chunk, not this chunk.
+    /// Contains N+1 offsets where N is the number of records:
+    /// - First offset is the chunk's starting position
+    /// - Last offset is the end of the last record
+    /// - Offsets are absolute positions in the complete log, not relative to
+    ///   chunk start
     pub(crate) global_offsets: Vec<u64>,
 
-    /// If the chunk has truncated unfinished write, this field will be set to
-    /// the file size before truncation.
+    /// Records the original file size if the chunk was truncated due to an
+    /// incomplete write.
     ///
-    /// For testing purpose only.
+    /// This field is primarily used for testing and debugging purposes.
     #[allow(dead_code)]
     pub(crate) truncated: Option<u64>,
 
@@ -48,14 +67,17 @@ pub struct Chunk<T> {
 }
 
 impl<T> Chunk<T> {
+    /// Returns the number of records stored in this chunk.
     pub(crate) fn records_count(&self) -> usize {
         self.global_offsets.len() - 1
     }
 
+    /// Returns this chunk's globally unique identifier.
     pub(crate) fn chunk_id(&self) -> ChunkId {
         ChunkId(self.global_offsets[0])
     }
 
+    /// Returns the segment representing the last record in this chunk.
     pub(crate) fn last_segment(&self) -> Segment {
         let offsets = &self.global_offsets;
         let l = offsets.len();
@@ -66,25 +88,31 @@ impl<T> Chunk<T> {
         Segment::new(start, end - start)
     }
 
+    /// Returns the total size of this chunk in bytes.
     pub(crate) fn chunk_size(&self) -> u64 {
         self.end_offset()
     }
 
+    /// Returns the size of this chunk in bytes, calculated as the difference
+    /// between its end and start offsets.
     #[allow(dead_code)]
     pub(crate) fn end_offset(&self) -> u64 {
         self.global_offsets[self.global_offsets.len() - 1]
             - self.global_offsets[0]
     }
 
+    /// Returns the global offset where this chunk begins.
     pub(crate) fn global_start(&self) -> u64 {
         self.global_offsets[0]
     }
 
+    /// Returns the global offset where this chunk ends.
     #[allow(dead_code)]
     pub(crate) fn global_end(&self) -> u64 {
         self.global_offsets[self.global_offsets.len() - 1]
     }
 
+    /// Appends the size of a new record to the global offsets list.
     pub(crate) fn append_record_size(&mut self, size: u64) {
         let last = self.global_offsets[self.global_offsets.len() - 1];
         self.global_offsets.push(last + size);
@@ -108,6 +136,12 @@ impl<T> Chunk<T> {
 impl<T> Chunk<T>
 where T: Types
 {
+    /// Opens a chunk and loads its records.
+    ///
+    /// This function performs the following steps:
+    /// 1. Opens the chunk file
+    /// 2. Loads the records from the file
+    /// 3. Verifies the integrity of the records
     pub(crate) fn open(
         config: Arc<Config>,
         chunk_id: ChunkId,
