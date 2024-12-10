@@ -7,11 +7,18 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
+use clap::Parser;
+use raft_log::api::raft_log_writer::RaftLogWriter;
 use raft_log::Config;
 use raft_log::Types;
-use raft_log::api::raft_log_writer::RaftLogWriter;
 
-#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq, clap::Parser)]
+#[clap(about = "dump RaftLog WAL", author)]
+pub struct Args {
+    #[arg(value_name = "PATH")]
+    path: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Default)]
 pub(crate) struct TestTypes;
@@ -37,16 +44,11 @@ impl Types for TestTypes {
     }
 }
 
-#[test]
-#[ignore]
-fn test_bench_raft_log() -> Result<(), io::Error> {
-    // Usage:
-    // cargo test --release --package raft-log --bin
-    // raft-log-bench test_bench_raft_log  -- --ignored  --exact -Z
-    // unstable-options --show-output --nocapture
-    let temp = tempfile::tempdir()?;
-    let path = temp.path().to_str().unwrap().to_string();
-    println!("{}", path);
+fn main() -> Result<(), io::Error> {
+    let args = Args::parse();
+    let path = args.path.to_str().unwrap().to_string();
+
+    println!("raft-dir path: {}", path);
 
     let config = Config {
         dir: path.clone(),
@@ -62,27 +64,28 @@ fn test_bench_raft_log() -> Result<(), io::Error> {
     let mut rl = raft_log::RaftLog::<TestTypes>::open(config)?;
 
     let n = 1024 * 1024;
-    let step = 1000;
+    let step = 500;
 
     let mut start = Instant::now();
 
     // let mut rxs = Vec::new();
 
     for index in 0..n {
-        rl.append([((1, index), "foo".to_string())])?;
+        rl.append([((1, index), "foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo".to_string())])?;
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         rl.flush(tx)?;
 
-        rx.recv().unwrap()?;
+        let _ = rx;
 
-        if index > 0 && index % step == 0 {
+        // rx.recv().unwrap()?;
+
+        if index % step == 1 {
             println!("index: {}", index);
 
             let elapsed = start.elapsed();
 
-            println!("{}", path);
             println!(
-                "elapsed: {:?}, {:?}, {} ops/ms",
+                "elapsed: {:?}, {:?}/op, {} ops/ms",
                 elapsed,
                 elapsed / (step as u32),
                 step / (elapsed.as_millis() as u64 + 1)
@@ -96,8 +99,7 @@ fn test_bench_raft_log() -> Result<(), io::Error> {
     //     rx.recv().unwrap()?;
     // }
 
-    sleep(Duration::from_secs(86400));
+    println!("write done");
+    sleep(Duration::from_secs(10));
     Ok(())
 }
-
-fn main() {}
