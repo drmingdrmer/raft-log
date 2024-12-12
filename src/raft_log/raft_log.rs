@@ -181,13 +181,13 @@ impl<T: Types> RaftLog<T> {
         let dir_lock = file_lock::FileLock::new(config.clone())
             .context(|| format!("open RaftLog in '{}'", config.dir))?;
 
-        let offsets = Self::load_chunk_ids(&config)?;
+        let chunk_ids = Self::load_chunk_ids(&config)?;
 
         let mut sm = RaftLogStateMachine::new(&config);
         let mut closed = BTreeMap::new();
         let mut prev_end_offset = None;
 
-        for chunk_id in offsets {
+        for chunk_id in chunk_ids {
             if let Some(prev_end) = prev_end_offset {
                 if prev_end != chunk_id.offset() {
                     let message = format!(

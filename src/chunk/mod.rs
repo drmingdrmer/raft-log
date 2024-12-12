@@ -6,6 +6,8 @@ mod record_iterator;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
+use std::io::BufReader;
+use std::io::Read;
 use std::io::Seek;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -14,6 +16,8 @@ use codeq::error_context_ext::ErrorContextExt;
 use codeq::Decode;
 use codeq::OffsetSize;
 use codeq::Segment;
+use log::error;
+use log::warn;
 use record_iterator::RecordIterator;
 
 use crate::chunk::chunk_id::ChunkId;
@@ -32,6 +36,13 @@ pub struct Chunk<T> {
     ///
     /// Global offset means the offset since the first chunk, not this chunk.
     pub(crate) global_offsets: Vec<u64>,
+
+    /// If the chunk has truncated unfinished write, this field will be set to
+    /// the file size before truncation.
+    ///
+    /// For testing purpose only.
+    #[allow(dead_code)]
+    pub(crate) truncated: Option<u64>,
 
     pub(crate) _p: PhantomData<T>,
 }
@@ -103,11 +114,13 @@ where T: Types
     ) -> Result<(Self, Vec<WALRecord<T>>), io::Error> {
         let f = Self::open_chunk_file(&config, chunk_id)?;
         let arc_f = Arc::new(f);
+        let file_size = arc_f.metadata()?.len();
         let it = Self::load_records_iter(&config, arc_f.clone(), chunk_id)?;
 
         let mut record_offsets = vec![chunk_id.offset()];
         let mut records = Vec::new();
         let mut truncate = false;
+        let mut truncated = None;
 
         for res in it {
             match res {
@@ -116,12 +129,42 @@ where T: Types
                     records.push(record);
                 }
                 Err(io_err) => {
+                    let global_offset = record_offsets.last().copied().unwrap();
+
                     if io_err.kind() == io::ErrorKind::UnexpectedEof {
                         // Incomplete record, discard it and all the following
                         // records.
                         truncate = config.truncate_incomplete_record();
                         if truncate {
                             break;
+                        }
+                    } else {
+                        // Maybe damaged or unfinished write with trailing
+                        // zeros.
+                        //
+                        // Trailing zeros can happen if EXT4 is mounted with
+                        // `data=writeback` mode, with which, data
+                        // and metadata(file len) will be written to disk in
+                        // arbitrary order.
+
+                        let all_zero = Self::verify_trailing_zeros(
+                            arc_f.clone(),
+                            global_offset - chunk_id.offset(),
+                            chunk_id,
+                        )?;
+
+                        if all_zero {
+                            warn!(
+                                "Trailing zeros detected at {} in chunk {}; Treat it as unfinished write",
+                                global_offset,
+                                chunk_id
+                            );
+                            truncate = config.truncate_incomplete_record();
+                            if truncate {
+                                break;
+                            }
+                        } else {
+                            error!("Found damaged bytes: {}", io_err);
                         }
                     }
 
@@ -134,15 +177,84 @@ where T: Types
             arc_f
                 .set_len(*record_offsets.last().unwrap() - chunk_id.offset())?;
             arc_f.sync_all()?;
+            truncated = Some(file_size);
         }
 
         let chunk = Self {
             f: arc_f,
             global_offsets: record_offsets,
+            truncated,
             _p: Default::default(),
         };
 
         Ok((chunk, records))
+    }
+
+    /// Checks if a file contains only zero bytes from a specified offset to the
+    /// end.
+    ///
+    /// This function is used to detect and validate partially written or
+    /// corrupted data. It reads the file in chunks and verifies that all
+    /// bytes after the given offset are zeros. This is particularly useful
+    /// for detecting incomplete or interrupted writes where the remaining
+    /// space may have been zero-filled.
+    fn verify_trailing_zeros(
+        mut file: Arc<File>,
+        mut start_offset: u64,
+        chunk_id: ChunkId,
+    ) -> Result<bool, io::Error> {
+        let file_size = file.metadata()?.len();
+
+        if start_offset > file_size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Start offset {} exceeds file size {}",
+                    start_offset, file_size
+                ),
+            ));
+        }
+
+        if file_size == start_offset {
+            return Ok(true);
+        }
+
+        const WARN_THRESHOLD: u64 = 64 * 1024; // 64KB
+        if file_size - start_offset > WARN_THRESHOLD {
+            warn!(
+                "Large maybe damaged section detected: {} bytes to the end; in chunk {}",
+                file_size - start_offset,
+                chunk_id
+            );
+        }
+
+        file.seek(io::SeekFrom::Start(start_offset))?;
+
+        const BUFFER_SIZE: usize = 16 * 1024 * 1024; // 16MB
+        const READ_CHUNK_SIZE: usize = 1024; // 1KB
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+        let mut buffer = vec![0; READ_CHUNK_SIZE];
+
+        loop {
+            let n = reader.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+
+            for (i, byt) in buffer.iter().enumerate().take(n) {
+                if *byt != 0 {
+                    error!(
+                        "Non-zero byte detected at offset {} in chunk {}",
+                        start_offset + i as u64,
+                        chunk_id
+                    );
+                    return Ok(false);
+                }
+            }
+
+            start_offset += n as u64;
+        }
+        Ok(true)
     }
 
     #[allow(clippy::type_complexity)]

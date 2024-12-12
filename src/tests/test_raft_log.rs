@@ -534,6 +534,137 @@ ChunkId(00_000_000_000_000_000_610)
     Ok(())
 }
 
+/// The last record will be discarded if it is not completely written and filled
+/// with zeros.
+///
+/// Trailing zeros can happen if EXT4 is mounted with `data=writeback` mode,
+/// with which, data and metadata(file len) will be written to disk in
+/// arbitrary order.
+#[test]
+fn test_re_open_unfinished_tailing_zero_chunk() -> Result<(), io::Error> {
+    for append_zeros in [3, 1024 * 33] {
+        let mut ctx = TestContext::new()?;
+        let config = &mut ctx.config;
+
+        config.chunk_max_records = Some(5);
+
+        let (state, logs) = {
+            let mut rl = ctx.new_raft_log()?;
+            build_sample_data_purge_upto_3(&mut rl)?;
+
+            (
+                rl.log_state().clone(),
+                rl.read(0, 1000).collect::<Result<Vec<_>, _>>()?,
+            )
+        };
+
+        // Append several zero bytes
+        {
+            let chunk_id = ChunkId(509);
+            let f = Chunk::<TestTypes>::open_chunk_file(&ctx.config, chunk_id)?;
+            f.set_len(129 + append_zeros)?;
+        }
+
+        // Re-open
+        {
+            let rl = ctx.new_raft_log()?;
+
+            let last_closed = rl.wal.closed.last_key_value().unwrap().1;
+            assert_eq!(last_closed.chunk.truncated, Some(129 + append_zeros));
+
+            assert_eq!(state, rl.log_state().clone());
+            assert_eq!(logs, rl.read(0, 1000).collect::<Result<Vec<_>, _>>()?);
+
+            let dump = rl.dump().write_to_string()?;
+            println!("After reopen:\n{}", dump);
+
+            assert_eq!(
+                indoc! {r#"
+RaftLog:
+ChunkId(00_000_000_000_000_000_324)
+  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
+  R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+ChunkId(00_000_000_000_000_000_509)
+  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
+  R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
+ChunkId(00_000_000_000_000_000_638)
+  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
+"#},
+                dump
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_re_open_unfinished_tailing_not_all_zero_chunk() -> Result<(), io::Error>
+{
+    let append_zeros = 1024 * 32;
+
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(5);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        build_sample_data_purge_upto_3(&mut rl)?;
+    }
+
+    // Append several zero bytes followed by a one
+    {
+        let chunk_id = ChunkId(509);
+        let mut f = Chunk::<TestTypes>::open_chunk_file(&ctx.config, chunk_id)?;
+        f.set_len(129 + append_zeros)?;
+
+        f.seek(io::SeekFrom::Start(129 + append_zeros))?;
+        f.write_u8(1)?;
+    }
+
+    // Re-open
+    {
+        let res = ctx.new_raft_log();
+        assert!(res.is_err());
+        assert_eq!(
+            "crc32 checksum mismatch: expected fd59b8d, got 0, \
+            while Record::decode(); \
+            when:(decode Record at offset 129); \
+            when:(iterate ChunkId(00_000_000_000_000_000_509))",
+            res.unwrap_err().to_string()
+        );
+
+        let dump =
+            Dump::<TestTypes>::new(ctx.arc_config())?.write_to_string()?;
+        println!("After reopen:\n{}", dump);
+
+        assert_eq!(
+            indoc! {r#"
+RaftLog:
+ChunkId(00_000_000_000_000_000_324)
+  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
+  R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+ChunkId(00_000_000_000_000_000_509)
+  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
+  R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
+Error: crc32 checksum mismatch: expected fd59b8d, got 0, while Record::decode(); when:(decode Record at offset 129); when:(iterate ChunkId(00_000_000_000_000_000_509))
+"#},
+            dump
+        );
+    }
+
+    Ok(())
+}
+
 /// A damaged last record of non-last chunk will not be truncated, but is
 /// considered a damage.
 #[test]

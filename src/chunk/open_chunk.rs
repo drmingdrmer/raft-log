@@ -38,6 +38,7 @@ where T: Types
         let chunk = Chunk {
             f: Arc::new(f),
             global_offsets: record_offsets,
+            truncated: None,
             _p: Default::default(),
         };
 
