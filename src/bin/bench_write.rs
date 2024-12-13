@@ -63,7 +63,7 @@ fn main() -> Result<(), io::Error> {
 
     let mut rl = raft_log::RaftLog::<TestTypes>::open(config)?;
 
-    let n = 1024 * 10;
+    let n = 1024 * 1024;
     let step = 500;
 
     let mut start = Instant::now();
