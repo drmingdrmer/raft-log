@@ -38,12 +38,31 @@ fn main() -> Result<(), io::Error> {
 
     let sf = f.clone();
 
-    let _th = thread::spawn(move || loop {
-        sf.sync_data().unwrap();
+    let _th = std::thread::Builder::new()
+            .name("fdatasync".to_string())
+            .spawn(move || {
+        let mut s = 0;
+        loop {
+            if let Err(e) = sf.sync_data() {
+                println!("error fdatasync: {}", e);
+            }
+
+            s += 1;
+            if s % 500 == 0 {
+                println!("fdatasync {s}");
+            }
+
+        }
     });
 
-    let buf = [1u8; 113];
+    let mut buf = [0xffu8; 113];
+    buf[0] = 1;
+    let mut i = 0;
     loop {
         f.write_all(&buf)?;
+        i += 1;
+        if i % 500 == 1 {
+            println!("written {i}");
+        }
     }
 }
