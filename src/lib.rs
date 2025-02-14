@@ -22,38 +22,58 @@
 //! Basic usage:
 //!
 //! ```rust
-//! use raft_log::{RaftLog, Config};
+//! # use std::io;
+//! # use std::sync::Arc;
+//! # use std::sync::mpsc::sync_channel;
+//! # use std::sync::mpsc::SyncSender;
+//! use raft_log::{RaftLog, Config, Types};
+//!
+//! use raft_log::api::raft_log_writer::RaftLogWriter;
 //!
 //! // Define your application-specific types
+//! #[derive(Debug, Clone, PartialEq, Eq, Default)]
+//! struct MyTypes;
 //! impl Types for MyTypes {
 //!     type LogId = (u64, u64);        // (term, index)
 //!     type LogPayload = String;        // Log entry data
 //!     type Vote = (u64, u64);         // (term, voted_for)
 //!     type UserData = String;         // Custom user data
 //!     type Callback = SyncSender<io::Result<()>>;
+//!
+//!     fn log_index(log_id: &Self::LogId) -> u64 {
+//!         log_id.1
+//!     }
+//!
+//!     fn payload_size(payload: &Self::LogPayload) -> u64 {
+//!         payload.len() as u64
+//!     }
 //! }
 //!
 //! // Open a RaftLog instance
-//! let config = Arc::new(Config::default());
-//! let mut raft_log = RaftLog::<MyTypes>::open(config)?;
+//! let temp_dir = tempfile::tempdir().unwrap();
+//! let config = Arc::new(Config {
+//!     dir: temp_dir.path().to_str().unwrap().to_string(),
+//!     ..Default::default()
+//! });
+//! let mut raft_log = RaftLog::<MyTypes>::open(config).unwrap();
 //!
 //! // Save vote information
-//! raft_log.save_vote((1, 2))?;  // Voted for node-2 in term 1
+//! raft_log.save_vote((1, 2)).unwrap();  // Voted for node-2 in term 1
 //!
 //! // Append log entries
 //! let entries = vec![
 //!     ((1, 1), "first entry".to_string()),
 //!     ((1, 2), "second entry".to_string()),
 //! ];
-//! raft_log.append(entries)?;
+//! raft_log.append(entries).unwrap();
 //!
 //! // Update commit index
-//! raft_log.commit((1, 2))?;
+//! raft_log.commit((1, 2)).unwrap();
 //!
 //! // Flush changes to disk with callback
 //! let (tx, rx) = sync_channel(1);
-//! raft_log.flush(tx)?;
-//! rx.recv().unwrap()?;
+//! raft_log.flush(tx).unwrap();
+//! rx.recv().unwrap().unwrap();
 //! ```
 
 mod chunk;
