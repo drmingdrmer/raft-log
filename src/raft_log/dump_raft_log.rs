@@ -122,7 +122,7 @@ mod tests {
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
     use crate::testing::ss;
     use crate::testing::TestTypes;
-    use crate::tests::test_context::TestContext;
+    use crate::tests::context::TestContext;
     use crate::RaftLog;
 
     #[test]
