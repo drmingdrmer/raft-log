@@ -4,7 +4,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use codeq::Encode;
-use codeq::Segment;
+use crate::types::Segment;
 
 use crate::chunk::Chunk;
 use crate::ChunkId;
@@ -19,7 +19,8 @@ pub(crate) struct OpenChunk<T: Types> {
 }
 
 impl<T> OpenChunk<T>
-where T: Types
+where
+    T: Types,
 {
     pub(crate) fn create(
         config: Arc<Config>,

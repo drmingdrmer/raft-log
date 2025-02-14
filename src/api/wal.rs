@@ -12,7 +12,7 @@
 
 use std::io;
 
-use codeq::Segment;
+use crate::types::Segment;
 
 /// Write-Ahead Log (WAL) trait that provides durability and consistency
 /// guarantees for state machine operations.

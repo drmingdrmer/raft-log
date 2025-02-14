@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use codeq::Segment;
+use crate::types::Segment;
 use payload_cache::PayloadCache;
 use raft_log_state::RaftLogState;
 

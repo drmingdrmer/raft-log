@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use codeq::Segment;
+use crate::types::Segment;
 
 use crate::ChunkId;
 

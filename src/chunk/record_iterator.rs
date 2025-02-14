@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use codeq::error_context_ext::ErrorContextExt;
 use codeq::Decode;
-use codeq::Segment;
+use crate::types::Segment;
 
 use crate::offset_reader::OffsetReader;
 use crate::ChunkId;

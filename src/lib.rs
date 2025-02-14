@@ -7,6 +7,7 @@ pub(crate) mod offset_reader;
 pub(crate) mod raft_log;
 pub(crate) mod testing;
 
+pub mod types;
 pub use codeq;
 
 pub mod api;
@@ -15,7 +16,7 @@ pub mod errors;
 
 pub use api::types::Types;
 pub use chunk::chunk_id::ChunkId;
-pub use codeq::Segment;
+pub use crate::types::Segment;
 pub use config::Config;
 pub use raft_log::stat::ChunkStat;
 pub use raft_log::stat::Stat;

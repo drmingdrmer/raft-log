@@ -26,12 +26,12 @@ use std::sync::Arc;
 use codeq::error_context_ext::ErrorContextExt;
 use codeq::Decode;
 use codeq::OffsetSize;
-use codeq::Segment;
 use log::error;
 use log::warn;
 use record_iterator::RecordIterator;
 
 use crate::chunk::chunk_id::ChunkId;
+use crate::types::Segment;
 use crate::Config;
 use crate::Types;
 use crate::WALRecord;
@@ -159,7 +159,7 @@ where T: Types
         for res in it {
             match res {
                 Ok((seg, record)) => {
-                    record_offsets.push(chunk_id.offset() + seg.end());
+                    record_offsets.push(chunk_id.offset() + seg.end().0);
                     records.push(record);
                 }
                 Err(io_err) => {
@@ -330,7 +330,9 @@ where T: Types
         segment: Segment,
     ) -> Result<WALRecord<T>, io::Error> {
         let mut f = self.f.as_ref();
-        f.seek(io::SeekFrom::Start(segment.offset() - self.global_start()))?;
+        f.seek(io::SeekFrom::Start(
+            segment.offset().0 - self.global_start(),
+        ))?;
 
         let br = io::BufReader::with_capacity(16 * 1024, f);
 

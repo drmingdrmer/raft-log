@@ -1,9 +1,9 @@
 use std::io;
 
 use codeq::OffsetSize;
-use codeq::Segment;
 
 use crate::num::format_pad9_u64;
+use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
@@ -16,14 +16,14 @@ pub fn multiline_string<T: Types, W: io::Write>(
 ) -> Result<(), io::Error> {
     match res {
         Ok((seg, rec)) => {
-            if seg.offset() == 0 {
+            if seg.offset().0 == 0 {
                 writeln!(w, "{}", chunk_id)?;
             }
             writeln!(
                 w,
                 "  R-{record_index:05}: [{}, {}) {}: {:?}",
-                format_pad9_u64(seg.offset()),
-                format_pad9_u64(seg.end()),
+                format_pad9_u64(*seg.offset()),
+                format_pad9_u64(*seg.end()),
                 seg.size(),
                 rec
             )?;

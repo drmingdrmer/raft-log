@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use codeq::OffsetSize;
-use codeq::Segment;
 pub(crate) use flush_request::FlushRequest;
 use log::info;
 
@@ -22,6 +21,7 @@ use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::flush_request::Flush;
 use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::raft_log::wal::flush_worker::FlushWorker;
+use crate::types::Segment;
 use crate::ChunkId;
 use crate::Config;
 use crate::Types;
@@ -32,8 +32,8 @@ pub(crate) mod wal_record;
 /// Write-ahead log implementation for the Raft log.
 ///
 /// This WAL implementation manages both open and closed chunks of data.
-/// An open chunk is actively being written to, while closed chunks are immutable
-/// and may be used for reading historical data.
+/// An open chunk is actively being written to, while closed chunks are
+/// immutable and may be used for reading historical data.
 #[derive(Debug)]
 pub(crate) struct RaftLogWAL<T>
 where T: Types
@@ -164,18 +164,21 @@ where T: Types
 
     /// Checks if the current open chunk has reached its capacity.
     ///
-    /// Returns true if either the maximum number of records or maximum chunk size is reached.
+    /// Returns true if either the maximum number of records or maximum chunk
+    /// size is reached.
     pub(crate) fn is_open_chunk_full(&self) -> bool {
         self.open.chunk.records_count() >= self.config.chunk_max_records()
             || (self.open.chunk.chunk_size() as usize)
                 >= self.config.chunk_max_size()
     }
 
-    /// Attempts to close the current chunk if it's full and creates a new open chunk.
+    /// Attempts to close the current chunk if it's full and creates a new open
+    /// chunk.
     ///
     /// # Arguments
     ///
-    /// * `get_state` - Function to retrieve the current Raft log state. This function is necessary because the state is not stored in the WAL.
+    /// * `get_state` - Function to retrieve the current Raft log state. This
+    ///   function is necessary because the state is not stored in the WAL.
     ///
     /// # Returns
     ///
@@ -198,13 +201,13 @@ where T: Types
         info!(
             "Closing full chunk: {}, open new: {}",
             self.open.chunk.chunk_id(),
-            ChunkId(offset)
+            ChunkId(offset.0)
         );
 
         let state = get_state();
 
         let mut new_open = {
-            let chunk_id = ChunkId(offset);
+            let chunk_id = ChunkId(offset.0);
             OpenChunk::create(
                 config,
                 chunk_id,
@@ -215,7 +218,7 @@ where T: Types
         std::mem::swap(&mut new_open, &mut self.open);
         self.flush_tx
             .send(FlushRequest::AppendFile(FileEntry::new(
-                offset,
+                offset.0,
                 new_open.chunk.f.clone(),
                 state.last().cloned(),
             )))

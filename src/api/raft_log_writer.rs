@@ -15,7 +15,7 @@
 use std::io;
 use std::sync::mpsc::SyncSender;
 
-use codeq::Segment;
+use crate::types::Segment;
 
 use crate::RaftLog;
 use crate::Types;
@@ -66,7 +66,8 @@ pub trait RaftLogWriter<T: Types> {
     ///
     /// Returns a Segment representing the written data region.
     fn append<I>(&mut self, entries: I) -> Result<Segment, io::Error>
-    where I: IntoIterator<Item = (T::LogId, T::LogPayload)>;
+    where
+        I: IntoIterator<Item=(T::LogId, T::LogPayload)>;
 
     /// Truncate the log by removing entries at and after the given index.
     ///
@@ -126,7 +127,9 @@ pub trait RaftLogWriter<T: Types> {
 /// Synchronously flush all written data to persistent storage.
 #[allow(dead_code)]
 pub(crate) fn blocking_flush<T>(rl: &mut RaftLog<T>) -> Result<(), io::Error>
-where T: Types<Callback = SyncSender<Result<(), io::Error>>> {
+where
+    T: Types<Callback=SyncSender<Result<(), io::Error>>>,
+{
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     rl.flush(tx)?;
     rx.recv().map_err(|_e| {

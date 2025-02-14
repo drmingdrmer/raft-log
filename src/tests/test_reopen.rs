@@ -59,17 +59,17 @@ fn test_re_open() -> Result<(), io::Error> {
             indoc! {r#"
             RaftLog:
             ChunkId(00_000_000_000_000_000_324)
-              R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
-              R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
-              R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
-              R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
-              R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+              R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+              R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+              R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+              R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
+              R-00004: [000_000_150, 000_000_185) Size(35): Append((2, 6), "bar")
             ChunkId(00_000_000_000_000_000_509)
-              R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
-              R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
-              R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
+              R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+              R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
+              R-00002: [000_000_101, 000_000_129) Size(28): PurgeUpto((2, 3))
             ChunkId(00_000_000_000_000_000_638)
-              R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
+              R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
             "#},
             dump
         );
@@ -120,16 +120,16 @@ fn test_re_open_unfinished_chunk() -> Result<(), io::Error> {
             indoc! {r#"
 RaftLog:
 ChunkId(00_000_000_000_000_000_324)
-  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
-  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
-  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
-  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
-  R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+  R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
+  R-00004: [000_000_150, 000_000_185) Size(35): Append((2, 6), "bar")
 ChunkId(00_000_000_000_000_000_509)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
-  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
 ChunkId(00_000_000_000_000_000_610)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
 "#},
             dump
         );
@@ -186,17 +186,17 @@ fn test_re_open_unfinished_tailing_zero_chunk() -> Result<(), io::Error> {
                 indoc! {r#"
 RaftLog:
 ChunkId(00_000_000_000_000_000_324)
-  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
-  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
-  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
-  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
-  R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+  R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
+  R-00004: [000_000_150, 000_000_185) Size(35): Append((2, 6), "bar")
 ChunkId(00_000_000_000_000_000_509)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
-  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
-  R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
+  R-00002: [000_000_101, 000_000_129) Size(28): PurgeUpto((2, 3))
 ChunkId(00_000_000_000_000_000_638)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
 "#},
                 dump
             );
@@ -251,15 +251,15 @@ fn test_re_open_unfinished_tailing_not_all_zero_chunk() -> Result<(), io::Error>
             indoc! {r#"
 RaftLog:
 ChunkId(00_000_000_000_000_000_324)
-  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
-  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
-  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
-  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
-  R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+  R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
+  R-00004: [000_000_150, 000_000_185) Size(35): Append((2, 6), "bar")
 ChunkId(00_000_000_000_000_000_509)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
-  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
-  R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
+  R-00002: [000_000_101, 000_000_129) Size(28): PurgeUpto((2, 3))
 Error: crc32 checksum mismatch: expected fd59b8d, got 0, while Record::decode(); when:(decode Record at offset 129); when:(iterate ChunkId(00_000_000_000_000_000_509))
 "#},
             dump
@@ -309,14 +309,14 @@ fn test_re_open_unfinished_non_last_chunk() -> Result<(), io::Error> {
             indoc! {r#"
 RaftLog:
 ChunkId(00_000_000_000_000_000_324)
-  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
-  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
-  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
-  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
+  R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
 ChunkId(00_000_000_000_000_000_509)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
-  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
-  R-00002: [000_000_101, 000_000_129) 28: PurgeUpto((2, 3))
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
+  R-00002: [000_000_101, 000_000_129) Size(28): PurgeUpto((2, 3))
 "#},
             dump
         );
@@ -371,14 +371,14 @@ fn test_re_open_damaged_last_record() -> Result<(), io::Error> {
             indoc! {r#"
 RaftLog:
 ChunkId(00_000_000_000_000_000_324)
-  R-00000: [000_000_000, 000_000_050) 50: State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
-  R-00001: [000_000_050, 000_000_078) 28: PurgeUpto((1, 1))
-  R-00002: [000_000_078, 000_000_115) 37: Append((2, 4), "world")
-  R-00003: [000_000_115, 000_000_150) 35: Append((2, 5), "foo")
-  R-00004: [000_000_150, 000_000_185) 35: Append((2, 6), "bar")
+  R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+  R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+  R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+  R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
+  R-00004: [000_000_150, 000_000_185) Size(35): Append((2, 6), "bar")
 ChunkId(00_000_000_000_000_000_509)
-  R-00000: [000_000_000, 000_000_066) 66: State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
-  R-00001: [000_000_066, 000_000_101) 35: Append((2, 7), "wow")
+  R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+  R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
 Error: crc32 checksum mismatch: expected cb22c57e, got cb23c57e, while Record::decode(); when:(decode Record at offset 101); when:(iterate ChunkId(00_000_000_000_000_000_509))
 "#},
             dump

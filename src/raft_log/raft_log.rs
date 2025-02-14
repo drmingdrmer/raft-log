@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use codeq::error_context_ext::ErrorContextExt;
 use codeq::OffsetSize;
-use codeq::Segment;
 use log::info;
 
 use crate::api::raft_log_writer::RaftLogWriter;
@@ -28,6 +27,7 @@ use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::wal::RaftLogWAL;
+use crate::types::Segment;
 use crate::ChunkId;
 use crate::Config;
 use crate::Types;
@@ -227,7 +227,7 @@ impl<T: Types> RaftLog<T> {
 
             let (chunk, records) = Chunk::open(config.clone(), chunk_id)?;
 
-            prev_end_offset = Some(chunk.last_segment().end());
+            prev_end_offset = Some(chunk.last_segment().end().0);
 
             for (i, record) in records.into_iter().enumerate() {
                 let start = chunk.global_offsets[i];

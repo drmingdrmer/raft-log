@@ -3,11 +3,11 @@ use std::io;
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
-use codeq::ChecksumReader;
-use codeq::ChecksumWriter;
+use codeq::config::CodeqConfig;
 
 use crate::api::types::Types;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::types::Checksum;
 
 /// WALRecord represents different types of records that can be written to the
 /// Write-Ahead Log (WAL).
@@ -56,7 +56,7 @@ impl<T: Types> WALRecord<T> {
 impl<T: Types> codeq::Encode for WALRecord<T> {
     fn encode<W: io::Write>(&self, mut w: W) -> Result<usize, io::Error> {
         let mut n = 0;
-        let mut cw = ChecksumWriter::new(&mut w);
+        let mut cw = Checksum::new_writer(&mut w);
 
         // record type
         {
@@ -88,7 +88,7 @@ impl<T: Types> codeq::Encode for WALRecord<T> {
 /// Reads the record type, payload, and verifies the checksum
 impl<T: Types> codeq::Decode for WALRecord<T> {
     fn decode<R: io::Read>(r: R) -> Result<Self, io::Error> {
-        let mut cr = ChecksumReader::new(r);
+        let mut cr = Checksum::new_reader(r);
 
         let record_type = cr.read_u32::<BigEndian>()?;
 
