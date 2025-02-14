@@ -2,11 +2,10 @@ use std::io;
 use std::io::Error;
 use std::sync::Arc;
 
-use crate::types::Segment;
-
 use crate::chunk::Chunk;
 use crate::file_lock;
 use crate::raft_log::dump_api::DumpApi;
+use crate::types::Segment;
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLog;
@@ -39,13 +38,11 @@ impl<T: Types> DumpApi<T> for Dump<T> {
     /// Returns an IO error if reading the chunks fails or if the callback
     /// returns an error.
     fn write_with<D>(&self, mut write_record: D) -> Result<(), io::Error>
-    where
-        D: FnMut(
+    where D: FnMut(
             ChunkId,
             u64,
             Result<(Segment, WALRecord<T>), io::Error>,
-        ) -> Result<(), io::Error>,
-    {
+        ) -> Result<(), io::Error> {
         let config = self.config.as_ref();
 
         let chunk_ids = RaftLog::<T>::load_chunk_ids(config)?;
@@ -81,13 +78,11 @@ impl<T: Types> DumpApi<T> for RefDump<'_, T> {
     /// Returns an IO error if reading the chunks fails or if the callback
     /// returns an error.
     fn write_with<D>(&self, mut write_record: D) -> Result<(), Error>
-    where
-        D: FnMut(
+    where D: FnMut(
             ChunkId,
             u64,
             Result<(Segment, WALRecord<T>), Error>,
-        ) -> Result<(), Error>,
-    {
+        ) -> Result<(), Error> {
         let closed =
             self.raft_log.wal.closed.values().map(|c| c.chunk.chunk_id());
 

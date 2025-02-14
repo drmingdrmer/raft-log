@@ -3,7 +3,6 @@
 use std::fmt::Debug;
 
 use crate::types::Segment;
-
 use crate::ChunkId;
 
 /// A trait representing a state machine of [`WAL`] that can apply records to

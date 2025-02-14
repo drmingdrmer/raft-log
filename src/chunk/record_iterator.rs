@@ -3,9 +3,9 @@ use std::marker::PhantomData;
 
 use codeq::error_context_ext::ErrorContextExt;
 use codeq::Decode;
-use crate::types::Segment;
 
 use crate::offset_reader::OffsetReader;
+use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;

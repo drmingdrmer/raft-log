@@ -1,8 +1,7 @@
 use std::io;
 
-use crate::types::Segment;
-
 use crate::dump_writer;
+use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
@@ -41,8 +40,7 @@ pub trait DumpApi<T: Types> {
     /// - `Err(io::Error)` if fails to read Raft-log or user provided callback
     ///   returns an error
     fn write_with<D>(&self, write_record: D) -> Result<(), io::Error>
-    where
-        D: FnMut(
+    where D: FnMut(
             ChunkId,
             u64,
             Result<(Segment, WALRecord<T>), io::Error>,
