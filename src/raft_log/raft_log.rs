@@ -158,7 +158,10 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
 }
 
 impl<T: Types> RaftLog<T> {
-    /// Dump log data
+    /// Dump the RaftLog data for debugging purposes.
+    ///
+    /// Returns a `DumpRaftLog` struct containing a complete snapshot of the
+    /// RaftLog state.
     pub fn dump_data(&self) -> DumpRaftLog<T> {
         let logs = self.state_machine.log.values().cloned().collect::<Vec<_>>();
         let cache =
@@ -175,6 +178,10 @@ impl<T: Types> RaftLog<T> {
         }
     }
 
+    /// Dump the WAL data in this Raft-log for debugging purposes.
+    ///
+    /// This method returns a reference type `RefDump` containing the RaftLog
+    /// configuration and the RaftLog instance itself.
     pub fn dump(&self) -> RefDump<'_, T> {
         RefDump {
             config: self.config.clone(),
@@ -182,6 +189,7 @@ impl<T: Types> RaftLog<T> {
         }
     }
 
+    /// Get a reference to the RaftLog configuration.
     pub fn config(&self) -> &Config {
         self.config.as_ref()
     }
@@ -303,6 +311,10 @@ impl<T: Types> RaftLog<T> {
         Ok(chunk_ids)
     }
 
+    /// Update the RaftLog state.
+    ///
+    /// This method updates the RaftLog state with a new state and appends it
+    /// to the WAL.
     pub fn update_state(
         &mut self,
         state: RaftLogState<T>,
@@ -339,6 +351,10 @@ impl<T: Types> RaftLog<T> {
         })
     }
 
+    /// Get a reference to the latest RaftLog state.
+    ///
+    /// The state is the latest state of the RaftLog, even if the corresponding
+    /// WAL record is not committed yet.
     pub fn log_state(&self) -> &RaftLogState<T> {
         &self.state_machine.log_state
     }
@@ -348,6 +364,12 @@ impl<T: Types> RaftLog<T> {
         &mut self.state_machine.log_state
     }
 
+    /// Get a reference to the RaftLog statistics.
+    ///
+    /// This method returns a `Stat` struct containing statistics about the
+    /// RaftLog, including:
+    /// - The number of closed chunks
+    /// - The open chunk statistics
     pub fn stat(&self) -> Stat<T> {
         let closed =
             self.wal.closed.values().map(|c| c.stat()).collect::<Vec<_>>();
@@ -383,6 +405,10 @@ impl<T: Types> RaftLog<T> {
         }
     }
 
+    /// Get a reference to the access statistics.
+    ///
+    /// This method returns a reference to the `AccessStat` struct, which
+    /// contains statistics about the access patterns of the RaftLog.
     pub fn access_stat(&self) -> &AccessStat {
         &self.access_stat
     }
