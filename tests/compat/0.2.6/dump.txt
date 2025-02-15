@@ -1,0 +1,7 @@
+RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }
+(2, 2): world
+(2, 3): foo
+(2, 4): world
+(2, 5): foo
+(2, 6): bar
+(2, 7): wow
