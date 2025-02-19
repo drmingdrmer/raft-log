@@ -53,7 +53,7 @@ pub struct DumpRaftLogIter<'a, T: Types> {
     data: &'a mut DumpRaftLog<T>,
 }
 
-impl<T: Types> DumpDataIter<'_, T> {
+impl<T: Types> DumpRaftLogIter<'_, T> {
     /// Reads a log payload from the chunk storage
     ///
     /// # Errors
@@ -70,7 +70,7 @@ impl<T: Types> DumpDataIter<'_, T> {
             io::Error::new(
                 io::ErrorKind::NotFound,
                 format!(
-                    "Chunk not found: {}; when:(DumpDataIter open cache-miss read)",
+                    "Chunk not found: {}; when:(DumpRaftLogIter open cache-miss read)",
                     chunk_id
                 ),
             )
@@ -87,7 +87,7 @@ impl<T: Types> DumpDataIter<'_, T> {
     }
 }
 
-impl<T: Types> Iterator for DumpDataIter<'_, T> {
+impl<T: Types> Iterator for DumpRaftLogIter<'_, T> {
     type Item = Result<(T::LogId, T::LogPayload), io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
