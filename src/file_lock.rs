@@ -56,7 +56,7 @@ impl FileLock {
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        let _ = self.f.unlock();
+        let _ = fs2::FileExt::unlock(&self.f);
         info!(
             "Directory lock released: {}",
             Self::lock_path(self.config.as_ref())

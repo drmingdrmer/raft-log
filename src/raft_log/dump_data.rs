@@ -34,7 +34,7 @@ pub struct DumpDataIter<'a, T: Types> {
     data: &'a mut DumpData<T>,
 }
 
-impl<'a, T: Types> DumpDataIter<'a, T> {
+impl<T: Types> DumpDataIter<'_, T> {
     fn read_log_payload(
         &self,
         data: &LogData<T>,
@@ -62,7 +62,7 @@ impl<'a, T: Types> DumpDataIter<'a, T> {
     }
 }
 
-impl<'a, T: Types> Iterator for DumpDataIter<'a, T> {
+impl<T: Types> Iterator for DumpDataIter<'_, T> {
     type Item = Result<(T::LogId, T::LogPayload), io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {

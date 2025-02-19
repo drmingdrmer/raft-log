@@ -220,7 +220,7 @@ fn list_wal_files(dir: &str) -> Result<Vec<String>, io::Error> {
     let mut paths: Vec<_> = fs::read_dir(dir)?
         .filter_map(|r| r.ok())
         .map(|dir| dir.path())
-        .filter(|p| p.extension().map_or(false, |ext| ext == "wal"))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "wal"))
         .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
         .collect();
     paths.sort();

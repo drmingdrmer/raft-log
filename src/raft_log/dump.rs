@@ -48,7 +48,7 @@ pub struct RefDump<'a, T: Types> {
     pub(crate) raft_log: &'a RaftLog<T>,
 }
 
-impl<'a, T: Types> DumpApi<T> for RefDump<'a, T> {
+impl<T: Types> DumpApi<T> for RefDump<'_, T> {
     fn write_with<D>(&self, mut write_record: D) -> Result<(), Error>
     where D: FnMut(
             ChunkId,
