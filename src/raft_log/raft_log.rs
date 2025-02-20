@@ -214,13 +214,17 @@ impl<T: Types> RaftLog<T> {
         let mut sm = RaftLogStateMachine::new(&config);
         let mut closed = BTreeMap::new();
         let mut prev_end_offset = None;
+        let mut last_log_id = None;
 
-        for chunk_id in chunk_ids {
+        for chunk_id in chunk_ids.iter().copied() {
+            // Only the last chunk(open chunk) needs to keep all log payload in
+            // cache. Therefore, payloads in previous chunks are marked as
+            // evictable.
+            sm.payload_cache.write().unwrap().set_last_evictable(last_log_id);
+
             Self::ensure_consecutive_chunks(prev_end_offset, chunk_id)?;
 
             let (chunk, records) = Chunk::open(config.clone(), chunk_id)?;
-
-            prev_end_offset = Some(chunk.last_segment().end().0);
 
             for (i, record) in records.into_iter().enumerate() {
                 let start = chunk.global_offsets[i];
@@ -229,9 +233,8 @@ impl<T: Types> RaftLog<T> {
                 sm.apply(&record, chunk_id, seg)?;
             }
 
-            // On disk logs can be evicted from the cache.
-            let last_log_id = sm.log_state.last.clone();
-            sm.payload_cache.write().unwrap().set_last_evictable(last_log_id);
+            prev_end_offset = Some(chunk.last_segment().end().0);
+            last_log_id = sm.log_state.last.clone();
 
             closed.insert(
                 chunk_id,
@@ -239,11 +242,17 @@ impl<T: Types> RaftLog<T> {
             );
         }
 
-        let open = OpenChunk::create(
-            config.clone(),
-            ChunkId(prev_end_offset.unwrap_or_default()),
-            WALRecord::State(sm.log_state.clone()),
-        )?;
+        let open = Self::reopen_last_closed(&mut closed);
+
+        let open = if let Some(open) = open {
+            open
+        } else {
+            OpenChunk::create(
+                config.clone(),
+                ChunkId(prev_end_offset.unwrap_or_default()),
+                WALRecord::State(sm.log_state.clone()),
+            )?
+        };
 
         let cache = sm.payload_cache.clone();
 
@@ -271,7 +280,7 @@ impl<T: Types> RaftLog<T> {
     ///
     /// * `prev_end_offset` - The end offset of the previous chunk, if any
     /// * `chunk_id` - The ID of the current chunk to verify
-    pub fn ensure_consecutive_chunks(
+    fn ensure_consecutive_chunks(
         prev_end_offset: Option<u64>,
         chunk_id: ChunkId,
     ) -> Result<(), io::Error> {
@@ -290,6 +299,27 @@ impl<T: Types> RaftLog<T> {
         }
 
         Ok(())
+    }
+
+    /// If there is a healthy last chunk, re-open it.
+    ///
+    /// Healthy means the data is complete and the chunk is not truncated.
+    /// If reused, the closed chunk will be removed from `closed_chunks`
+    fn reopen_last_closed(
+        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<T>>,
+    ) -> Option<OpenChunk<T>> {
+        // If the chunk is truncated, it is not healthy, do not re-open it.
+        {
+            let (_chunk_id, closed) = closed_chunks.iter().last()?;
+
+            if closed.chunk.truncated.is_some() {
+                return None;
+            }
+        }
+
+        let (_chunk_id, last) = closed_chunks.pop_last().unwrap();
+        let open = OpenChunk::new(last.chunk);
+        Some(open)
     }
 
     pub fn load_chunk_ids(config: &Config) -> Result<Vec<ChunkId>, io::Error> {

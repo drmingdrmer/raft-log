@@ -563,7 +563,7 @@ fn test_read_without_cache() -> Result<(), io::Error> {
         ];
         assert_eq!(logs.to_vec(), got);
         assert_eq!(
-            "AccessStat{cache(hit/miss)=3/8}",
+            "AccessStat{cache(hit/miss)=5/6}",
             rl.access_stat().to_string(),
             "another hit on the last log"
         );

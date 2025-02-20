@@ -21,6 +21,14 @@ pub(crate) struct OpenChunk<T: Types> {
 impl<T> OpenChunk<T>
 where T: Types
 {
+    /// Creates a new open chunk from an existing chunk.
+    pub(crate) fn new(chunk: Chunk<T>) -> Self {
+        Self {
+            record_write_buf: Vec::new(),
+            chunk,
+        }
+    }
+
     pub(crate) fn create(
         config: Arc<Config>,
         chunk_id: ChunkId,

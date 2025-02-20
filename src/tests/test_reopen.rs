@@ -17,7 +17,10 @@ use byteorder::WriteBytesExt;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
+use crate::api::raft_log_writer::blocking_flush;
+use crate::api::raft_log_writer::RaftLogWriter;
 use crate::chunk::Chunk;
+use crate::testing::ss;
 use crate::testing::TestTypes;
 use crate::tests::context::TestContext;
 use crate::tests::sample_data;
@@ -25,12 +28,16 @@ use crate::ChunkId;
 use crate::Dump;
 use crate::DumpApi;
 
+/// Reopened RaftLog should have the same state and entries as before.
+/// - it re-open the last closed chunk by default
+/// - continue writing
 #[test]
 fn test_re_open() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
-    let config = &mut ctx.config;
-
-    config.chunk_max_records = Some(5);
+    {
+        let config = &mut ctx.config;
+        config.chunk_max_records = Some(5);
+    }
 
     let (state, logs) = {
         let mut rl = ctx.new_raft_log()?;
@@ -42,9 +49,14 @@ fn test_re_open() -> Result<(), io::Error> {
         )
     };
 
+    {
+        let config = &mut ctx.config;
+        config.chunk_max_records = Some(7);
+    }
+
     // Re-open
     {
-        let rl = ctx.new_raft_log()?;
+        let mut rl = ctx.new_raft_log()?;
 
         assert_eq!(state, rl.log_state().clone());
         assert_eq!(
@@ -68,8 +80,46 @@ fn test_re_open() -> Result<(), io::Error> {
               R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
               R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
               R-00002: [000_000_101, 000_000_129) Size(28): PurgeUpto((2, 3))
-            ChunkId(00_000_000_000_000_000_638)
-              R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
+            "#},
+            dump
+        );
+
+        // Continue write
+
+        let logs = [
+            //
+            ((3, 8), ss("hi")),
+            ((3, 9), ss("hello")),
+            ((3, 10), ss("world")),
+            ((3, 11), ss("foo")),
+            ((3, 12), ss("foo")),
+        ];
+        rl.append(logs)?;
+        blocking_flush(&mut rl)?;
+
+        let dump = rl.dump().write_to_string()?;
+        println!("After reopen:\n{}", dump);
+
+        assert_eq!(
+            indoc! {r#"
+            RaftLog:
+            ChunkId(00_000_000_000_000_000_324)
+              R-00000: [000_000_000, 000_000_050) Size(50): State(RaftLogState { vote: None, last: Some((2, 3)), committed: Some((1, 2)), purged: None, user_data: None })
+              R-00001: [000_000_050, 000_000_078) Size(28): PurgeUpto((1, 1))
+              R-00002: [000_000_078, 000_000_115) Size(37): Append((2, 4), "world")
+              R-00003: [000_000_115, 000_000_150) Size(35): Append((2, 5), "foo")
+              R-00004: [000_000_150, 000_000_185) Size(35): Append((2, 6), "bar")
+            ChunkId(00_000_000_000_000_000_509)
+              R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None })
+              R-00001: [000_000_066, 000_000_101) Size(35): Append((2, 7), "wow")
+              R-00002: [000_000_101, 000_000_129) Size(28): PurgeUpto((2, 3))
+              R-00003: [000_000_129, 000_000_163) Size(34): Append((3, 8), "hi")
+              R-00004: [000_000_163, 000_000_200) Size(37): Append((3, 9), "hello")
+              R-00005: [000_000_200, 000_000_237) Size(37): Append((3, 10), "world")
+              R-00006: [000_000_237, 000_000_272) Size(35): Append((3, 11), "foo")
+            ChunkId(00_000_000_000_000_000_781)
+              R-00000: [000_000_000, 000_000_066) Size(66): State(RaftLogState { vote: None, last: Some((3, 11)), committed: Some((1, 2)), purged: Some((2, 3)), user_data: None })
+              R-00001: [000_000_066, 000_000_101) Size(35): Append((3, 12), "foo")
             "#},
             dump
         );
