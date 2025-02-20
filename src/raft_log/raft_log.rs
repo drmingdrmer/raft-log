@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::io::Error;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -16,7 +15,6 @@ use crate::chunk::open_chunk::OpenChunk;
 use crate::chunk::Chunk;
 use crate::errors::LogIndexNotFound;
 use crate::errors::RaftLogStateError;
-use crate::file_lock;
 use crate::file_lock::FileLock;
 use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
@@ -47,7 +45,7 @@ pub struct RaftLog<T: Types> {
     pub(crate) config: Arc<Config>,
 
     /// Acquire the dir exclusive lock when writing to the log.
-    _dir_lock: file_lock::FileLock,
+    _dir_lock: FileLock,
 
     pub(crate) wal: RaftLogWAL<T>,
 
@@ -65,7 +63,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     fn save_user_data(
         &mut self,
         user_data: Option<T::UserData>,
-    ) -> Result<Segment, Error> {
+    ) -> Result<Segment, io::Error> {
         let mut state = self.log_state().clone();
         state.user_data = user_data;
         let record = WALRecord::State(state);
@@ -208,7 +206,7 @@ impl<T: Types> RaftLog<T> {
     /// - There are gaps between chunk offsets
     /// - WAL records are invalid
     pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
-        let dir_lock = file_lock::FileLock::new(config.clone())
+        let dir_lock = FileLock::new(config.clone())
             .context(|| format!("open RaftLog in '{}'", config.dir))?;
 
         let chunk_ids = Self::load_chunk_ids(&config)?;
@@ -218,20 +216,7 @@ impl<T: Types> RaftLog<T> {
         let mut prev_end_offset = None;
 
         for chunk_id in chunk_ids {
-            if let Some(prev_end) = prev_end_offset {
-                if prev_end != chunk_id.offset() {
-                    let message = format!(
-                        "Gap between chunks: {} -> {}; Can not open, \
-                        fix this error and re-open",
-                        format_pad_u64(prev_end),
-                        format_pad_u64(chunk_id.offset()),
-                    );
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        message,
-                    ));
-                }
-            }
+            Self::ensure_consecutive_chunks(prev_end_offset, chunk_id)?;
 
             let (chunk, records) = Chunk::open(config.clone(), chunk_id)?;
 
@@ -274,6 +259,37 @@ impl<T: Types> RaftLog<T> {
         };
 
         Ok(s)
+    }
+
+    /// Verifies that two chunks are consecutive by checking their end/start
+    /// offsets.
+    ///
+    /// This function ensures that there are no gaps between chunks in the WAL.
+    /// A gap would indicate data loss or corruption.
+    ///
+    /// # Arguments
+    ///
+    /// * `prev_end_offset` - The end offset of the previous chunk, if any
+    /// * `chunk_id` - The ID of the current chunk to verify
+    pub fn ensure_consecutive_chunks(
+        prev_end_offset: Option<u64>,
+        chunk_id: ChunkId,
+    ) -> Result<(), io::Error> {
+        let Some(prev_end) = prev_end_offset else {
+            return Ok(());
+        };
+
+        if prev_end != chunk_id.offset() {
+            let message = format!(
+                "Gap between chunks: {} -> {}; Can not open, \
+                        fix this error and re-open",
+                format_pad_u64(prev_end),
+                format_pad_u64(chunk_id.offset()),
+            );
+            return Err(io::Error::new(io::ErrorKind::InvalidData, message));
+        }
+
+        Ok(())
     }
 
     pub fn load_chunk_ids(config: &Config) -> Result<Vec<ChunkId>, io::Error> {
