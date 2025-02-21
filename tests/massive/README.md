@@ -1,0 +1,1 @@
+Periodically read a small segment during write various record to RaftLog.
