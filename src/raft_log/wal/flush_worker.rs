@@ -20,7 +20,7 @@ pub(crate) struct FileEntry<T: Types> {
 
     /// The first log id in this file, also the last log id in the previous
     /// chunk file.
-    pub(crate) first_log_id: Option<T::LogId>,
+    pub(crate) prev_last_log_id: Option<T::LogId>,
     /// for debug
     pub(crate) sync_id: u64,
 }
@@ -31,24 +31,26 @@ where T: Types
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "FileEntry{{ starting_offset: {}, first_log_id: {:?} sync_id: {} }}",
+            "FileEntry{{ starting_offset: {}, prev_last_log_id: {:?} sync_id: {} }}",
             ChunkId(self.starting_offset),
-            self.first_log_id,
+            self.prev_last_log_id,
             self.sync_id
         )
     }
 }
 
 impl<T: Types> FileEntry<T> {
+    /// `last_log_id`: the last log id in the previous chunk file. It is used to
+    /// set the cache eviction boundary.
     pub(crate) fn new(
         starting_offset: u64,
         f: Arc<File>,
-        last_log_id: Option<T::LogId>,
+        prev_last_log_id: Option<T::LogId>,
     ) -> Self {
         Self {
             starting_offset,
             f,
-            first_log_id: last_log_id,
+            prev_last_log_id,
             sync_id: 0,
         }
     }
@@ -206,7 +208,7 @@ impl<T: Types> FlushWorker<T> {
 
         {
             let mut cache = self.cache.write().unwrap();
-            cache.set_last_evictable(f.first_log_id.clone());
+            cache.set_last_evictable(f.prev_last_log_id.clone());
         }
 
         files[0].f.sync_data()?;
