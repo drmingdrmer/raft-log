@@ -103,7 +103,7 @@ impl<T: Types> PayloadCache<T> {
 
     pub(crate) fn purge_upto(&mut self, key: &T::LogId) {
         while let Some((log_id, payload)) = self.cache.pop_first() {
-            if &log_id <= key {
+            if &log_id <= key && Some(&log_id) <= self.last_evictable.as_ref() {
                 self.size -= T::payload_size(&payload) as usize;
             } else {
                 self.cache.insert(log_id, payload);
@@ -286,6 +286,11 @@ mod tests {
 
         // Purge up to (1, 2)
         cache.purge_upto(&(1, 2));
+        assert_eq!(cache.item_count(), 5);
+
+        cache.set_last_evictable(Some((1, 2)));
+
+        cache.purge_upto(&(1, 2));
         assert_eq!(cache.item_count(), 3);
         assert_eq!(cache.total_size(), 22);
 
@@ -297,6 +302,11 @@ mod tests {
 
         // Purge up to (2, 3)
         cache.purge_upto(&(2, 3));
+        assert_eq!(cache.item_count(), 3);
+
+        cache.set_last_evictable(Some((2, 3)));
+
+        cache.purge_upto(&(2, 3));
         assert_eq!(cache.item_count(), 2);
         assert_eq!(cache.total_size(), 19);
 
@@ -305,6 +315,7 @@ mod tests {
         assert_eq!(cache.get(&(2, 5)), Some(payload5.clone()));
 
         // Purge up to a key that doesn't exist but is between existing keys
+        cache.set_last_evictable(Some((2, 4)));
         cache.purge_upto(&(2, 4));
         assert_eq!(cache.item_count(), 1);
         assert_eq!(cache.total_size(), 11);
@@ -313,6 +324,7 @@ mod tests {
         assert_eq!(cache.get(&(2, 5)), Some(payload5.clone()));
 
         // Purge up to a key larger than all existing keys
+        cache.set_last_evictable(Some((3, 0)));
         cache.purge_upto(&(3, 0));
         assert_eq!(cache.item_count(), 0);
         assert_eq!(cache.total_size(), 0);

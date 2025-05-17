@@ -432,7 +432,7 @@ fn test_purge_free_cache() -> Result<(), io::Error> {
         build_sample_data(&mut rl)?;
 
         let stat = rl.stat();
-        assert_eq!(stat.payload_cache_item_count, 6);
+        assert_eq!(stat.payload_cache_item_count, 8);
 
         rl.purge((2, 6))?;
         blocking_flush(&mut rl)?;
@@ -868,7 +868,7 @@ fn test_stat() -> Result<(), io::Error> {
           ChunkStat(ChunkId(00_000_000_000_000_000_324)){records: 5, [000_000_324, 000_000_509), size: 000_000_185, log_state: RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }}
          ],
          open_chunk: ChunkStat(ChunkId(00_000_000_000_000_000_509)){records: 2, [000_000_509, 000_000_610), size: 000_000_101, log_state: RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }},
-         payload_cache:{evictable: ..(2, 6),item/max: 000_000_006 / 000_100_000,size/cap: 000_000_022 / 1_073_741_824,miss: 000_000_000,hit: 000_000_000}
+         payload_cache:{evictable: ..(2, 6),item/max: 000_000_008 / 000_100_000,size/cap: 000_000_029 / 1_073_741_824,miss: 000_000_000,hit: 000_000_000}
         }"#};
         assert_eq!(want, format!("{:#}", stat));
     }
