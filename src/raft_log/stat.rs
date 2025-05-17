@@ -42,7 +42,7 @@ where T: Types
         write!(
             f,
             "Stat{{{lb} closed_chunks: [{lb}{idt}{}{lb} ],{lb} open_chunk: {},{lb} payload_cache:{{\
-            evictable: ..{:?},\
+            evictable: ..={:?},\
             item/max: {} / {},\
             size/cap: {} / {},\
             miss: {},\
