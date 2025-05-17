@@ -33,6 +33,10 @@ impl<T: Types> PayloadCache<T> {
         self.last_evictable = log_id;
     }
 
+    pub(crate) fn last_evictable(&self) -> Option<&T::LogId> {
+        self.last_evictable.as_ref()
+    }
+
     pub(crate) fn item_count(&self) -> usize {
         self.cache.len()
     }
@@ -89,6 +93,17 @@ impl<T: Types> PayloadCache<T> {
     pub(crate) fn truncate_after(&mut self, key: &T::LogId) {
         while let Some((log_id, payload)) = self.cache.pop_last() {
             if key < &log_id {
+                self.size -= T::payload_size(&payload) as usize;
+            } else {
+                self.cache.insert(log_id, payload);
+                break;
+            }
+        }
+    }
+
+    pub(crate) fn purge_upto(&mut self, key: &T::LogId) {
+        while let Some((log_id, payload)) = self.cache.pop_first() {
+            if &log_id <= key {
                 self.size -= T::payload_size(&payload) as usize;
             } else {
                 self.cache.insert(log_id, payload);
@@ -247,5 +262,61 @@ mod tests {
 
         assert_eq!(cache.get(&(1, 1)), None);
         assert_eq!(cache.get(&(1, 2)), None);
+    }
+
+    #[test]
+    fn test_purge_upto() {
+        let mut cache = PayloadCache::<TestTypes>::new(10, 100);
+
+        let payload1 = "foo".to_string();
+        let payload2 = "bar".to_string();
+        let payload3 = "baz".to_string();
+        let payload4 = "12345678".to_string();
+        let payload5 = "123456789ab".to_string();
+
+        cache.insert((1, 1), payload1.clone());
+        cache.insert((1, 2), payload2.clone());
+        cache.insert((2, 3), payload3.clone());
+        cache.insert((2, 4), payload4.clone());
+        cache.insert((2, 5), payload5.clone());
+
+        // Initial state
+        assert_eq!(cache.item_count(), 5);
+        assert_eq!(cache.total_size(), 28);
+
+        // Purge up to (1, 2)
+        cache.purge_upto(&(1, 2));
+        assert_eq!(cache.item_count(), 3);
+        assert_eq!(cache.total_size(), 22);
+
+        assert_eq!(cache.get(&(1, 1)), None);
+        assert_eq!(cache.get(&(1, 2)), None);
+        assert_eq!(cache.get(&(2, 3)), Some(payload3.clone()));
+        assert_eq!(cache.get(&(2, 4)), Some(payload4.clone()));
+        assert_eq!(cache.get(&(2, 5)), Some(payload5.clone()));
+
+        // Purge up to (2, 3)
+        cache.purge_upto(&(2, 3));
+        assert_eq!(cache.item_count(), 2);
+        assert_eq!(cache.total_size(), 19);
+
+        assert_eq!(cache.get(&(2, 3)), None);
+        assert_eq!(cache.get(&(2, 4)), Some(payload4.clone()));
+        assert_eq!(cache.get(&(2, 5)), Some(payload5.clone()));
+
+        // Purge up to a key that doesn't exist but is between existing keys
+        cache.purge_upto(&(2, 4));
+        assert_eq!(cache.item_count(), 1);
+        assert_eq!(cache.total_size(), 11);
+
+        assert_eq!(cache.get(&(2, 4)), None);
+        assert_eq!(cache.get(&(2, 5)), Some(payload5.clone()));
+
+        // Purge up to a key larger than all existing keys
+        cache.purge_upto(&(3, 0));
+        assert_eq!(cache.item_count(), 0);
+        assert_eq!(cache.total_size(), 0);
+
+        assert_eq!(cache.get(&(2, 5)), None);
     }
 }

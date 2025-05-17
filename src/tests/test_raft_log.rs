@@ -13,6 +13,7 @@ use crate::testing::ss;
 use crate::tests::context::new_testing;
 use crate::tests::context::TestContext;
 use crate::tests::sample_data;
+use crate::tests::sample_data::build_sample_data;
 use crate::types::Segment;
 
 #[test]
@@ -409,6 +410,35 @@ fn test_purge_removes_chunks() -> Result<(), io::Error> {
             "#},
             dump
         );
+    }
+
+    Ok(())
+}
+
+/// Purged items should not reside in cache even when the cache size/item
+/// capacity is not reached.
+#[test]
+fn test_purge_free_cache() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.chunk_max_records = Some(5);
+    config.log_cache_max_items = Some(100);
+    config.log_cache_capacity = Some(10240);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+
+        build_sample_data(&mut rl)?;
+
+        let stat = rl.stat();
+        assert_eq!(stat.payload_cache_item_count, 6);
+
+        rl.purge((2, 6))?;
+        blocking_flush(&mut rl)?;
+
+        let stat = rl.stat();
+        assert_eq!(stat.payload_cache_item_count, 1);
     }
 
     Ok(())
@@ -838,7 +868,7 @@ fn test_stat() -> Result<(), io::Error> {
           ChunkStat(ChunkId(00_000_000_000_000_000_324)){records: 5, [000_000_324, 000_000_509), size: 000_000_185, log_state: RaftLogState { vote: None, last: Some((2, 6)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }}
          ],
          open_chunk: ChunkStat(ChunkId(00_000_000_000_000_000_509)){records: 2, [000_000_509, 000_000_610), size: 000_000_101, log_state: RaftLogState { vote: None, last: Some((2, 7)), committed: Some((1, 2)), purged: Some((1, 1)), user_data: None }},
-         payload_cache:{item_count: 000_000_008,max_item: 000_100_000,size: 000_000_029,capacity: 1_073_741_824,miss: 000_000_000,hit: 000_000_000}
+         payload_cache:{evictable: ..(2, 6),item/max: 000_000_006 / 000_100_000,size/cap: 000_000_022 / 1_073_741_824,miss: 000_000_000,hit: 000_000_000}
         }"#};
         assert_eq!(want, format!("{:#}", stat));
     }

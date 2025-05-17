@@ -72,6 +72,8 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
                 let index = T::next_log_index(Some(log_id));
                 let b = self.log.split_off(&index);
                 self.log = b;
+
+                self.payload_cache.write().unwrap().purge_upto(log_id);
             }
             WALRecord::State(_st) => {}
         }

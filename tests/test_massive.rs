@@ -42,7 +42,7 @@ fn test_massive_load() -> std::io::Result<()> {
 
     let config = Arc::new(Config {
         dir: path,
-        log_cache_max_items: Some(50),
+        log_cache_max_items: Some(200),
         chunk_max_records: Some(100),
         ..Default::default()
     });
@@ -95,15 +95,25 @@ fn test_massive_load() -> std::io::Result<()> {
 
                 let state = log.log_state();
                 writeln!(file, "{:?}", state)?;
+
+                let stat = log.stat();
+                writeln!(file, "{:#}", stat)?;
+
                 for entry in entries {
                     writeln!(file, "{:?}", entry)?;
                 }
             }
         }
 
+        let stat = log.stat();
+        writeln!(file, "sync start: {:#}", stat)?;
+
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         log.flush(tx)?;
         rx.recv().unwrap()?;
+
+        let stat = log.stat();
+        writeln!(file, "sync done: {:#}", stat)?;
 
         sleep(Duration::from_millis(200));
     }

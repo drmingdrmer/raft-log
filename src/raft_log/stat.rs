@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::Formatter;
 
+use crate::disp::display_option::DebugOption;
 use crate::num::format_pad9_u64;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::ChunkId;
@@ -16,6 +17,8 @@ where T: Types
     pub closed_chunks: Vec<ChunkStat<T>>,
     /// Statistics for the currently open (active) chunk
     pub open_chunk: ChunkStat<T>,
+    /// The last evictable log id in the payload cache
+    pub payload_cache_last_evictable: Option<T::LogId>,
     /// Current number of items in the payload cache
     pub payload_cache_item_count: u64,
     /// Maximum number of items allowed in the payload cache
@@ -39,10 +42,9 @@ where T: Types
         write!(
             f,
             "Stat{{{lb} closed_chunks: [{lb}{idt}{}{lb} ],{lb} open_chunk: {},{lb} payload_cache:{{\
-            item_count: {},\
-            max_item: {},\
-            size: {},\
-            capacity: {},\
+            evictable: ..{:?},\
+            item/max: {} / {},\
+            size/cap: {} / {},\
             miss: {},\
             hit: {}\
             }}{lb}\
@@ -53,6 +55,7 @@ where T: Types
                 .collect::<Vec<String>>()
                 .join(&format!(",{lb}{idt}")),
             self.open_chunk,
+            DebugOption(self.payload_cache_last_evictable.as_ref()),
             format_pad9_u64(self.payload_cache_item_count),
             format_pad9_u64(self.payload_cache_max_item),
             format_pad9_u64(self.payload_cache_size),

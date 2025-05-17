@@ -79,6 +79,7 @@
 mod chunk;
 mod config;
 
+pub(crate) mod disp;
 pub(crate) mod file_lock;
 pub(crate) mod num;
 pub(crate) mod offset_reader;

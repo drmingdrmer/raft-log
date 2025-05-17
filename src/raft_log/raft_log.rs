@@ -435,6 +435,7 @@ impl<T: Types> RaftLog<T> {
             closed_chunks: closed,
             open_chunk: open_stat,
 
+            payload_cache_last_evictable: cache.last_evictable().cloned(),
             payload_cache_item_count: cache.item_count() as u64,
             payload_cache_max_item: cache.max_items() as u64,
             payload_cache_size: cache.total_size() as u64,
