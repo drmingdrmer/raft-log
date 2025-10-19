@@ -31,6 +31,32 @@ impl Types for TestTypes {
     }
 }
 
+/// Type config to test Display implementation
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
+pub(crate) struct TestDisplayTypes;
+
+impl Types for TestDisplayTypes {
+    /// (term, index)
+    type LogId = u64;
+
+    type LogPayload = String;
+    /// (term, voted_for)
+    type Vote = u64;
+
+    type Callback = std::sync::mpsc::SyncSender<Result<(), io::Error>>;
+
+    type UserData = String;
+
+    fn log_index(log_id: &Self::LogId) -> u64 {
+        *log_id
+    }
+
+    fn payload_size(payload: &Self::LogPayload) -> u64 {
+        payload.len() as u64
+    }
+}
+
 #[allow(dead_code)]
 pub fn test_codec_without_corruption<D: Codec + PartialEq + Debug>(
     encoded_bytes: &[u8],

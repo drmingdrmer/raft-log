@@ -1,9 +1,12 @@
+use std::fmt;
+use std::fmt::Formatter;
 use std::io;
 
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 use codeq::config::CodeqConfig;
+use display_more::DisplayOptionExt;
 
 use crate::api::types::Types;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
@@ -44,6 +47,38 @@ impl<T: Types> WALRecord<T> {
             WALRecord::TruncateAfter(_) => 3,
             WALRecord::PurgeUpto(_) => 4,
             WALRecord::State(_) => 5,
+        }
+    }
+}
+
+impl<T> fmt::Display for WALRecord<T>
+where
+    T: Types,
+    T::Vote: fmt::Display,
+    T::LogId: fmt::Display,
+    T::LogPayload: fmt::Display,
+    RaftLogState<T>: fmt::Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            WALRecord::SaveVote(vote) => {
+                write!(f, "SaveVote({})", vote)
+            }
+            WALRecord::Append(log_id, payload) => {
+                write!(f, "Append(log_id: {}, payload: {})", log_id, payload)
+            }
+            WALRecord::Commit(log_id) => {
+                write!(f, "Commit({})", log_id)
+            }
+            WALRecord::TruncateAfter(option_log_id) => {
+                write!(f, "TruncateAfter({})", option_log_id.display())
+            }
+            WALRecord::PurgeUpto(log_id) => {
+                write!(f, "PurgeUpto({})", log_id)
+            }
+            WALRecord::State(raft_log_state) => {
+                write!(f, "RaftLogState({})", raft_log_state)
+            }
         }
     }
 }
@@ -122,10 +157,12 @@ mod tests {
     use std::io;
 
     use codeq::testing::test_codec;
+    use display_more::DisplaySliceExt;
 
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
     use crate::raft_log::wal::wal_record::WALRecord;
     use crate::testing::ss;
+    use crate::testing::TestDisplayTypes;
     use crate::testing::TestTypes;
 
     #[test]
@@ -233,5 +270,30 @@ mod tests {
         ];
 
         test_codec(&b, &rec)
+    }
+
+    #[test]
+    fn test_wal_record_display() {
+        let records = [
+            WALRecord::<TestDisplayTypes>::SaveVote(1),
+            WALRecord::<TestDisplayTypes>::Append(3u64, "hello".to_string()),
+            WALRecord::<TestDisplayTypes>::Commit(5u64),
+            WALRecord::<TestDisplayTypes>::TruncateAfter(Some(7u64)),
+            WALRecord::<TestDisplayTypes>::PurgeUpto(9u64),
+            WALRecord::<TestDisplayTypes>::State(RaftLogState {
+                vote: Some(1),
+                last: Some(3),
+                committed: Some(4),
+                purged: Some(6),
+                user_data: Some("hello".to_string()),
+            }),
+        ];
+
+        let got = format!("{}", records.display_n(1000));
+
+        let want =
+        "[SaveVote(1),Append(log_id: 3, payload: hello),Commit(5),TruncateAfter(7),PurgeUpto(9),RaftLogState(RaftLogState(vote: 1, last: 3, committed: 4, purged: 6, user_data: hello))]";
+
+        assert_eq!(want, got);
     }
 }

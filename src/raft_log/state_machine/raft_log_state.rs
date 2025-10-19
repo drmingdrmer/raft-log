@@ -1,4 +1,8 @@
+use std::fmt;
+use std::fmt::Formatter;
 use std::io;
+
+use display_more::DisplayOptionExt;
 
 use crate::api::types::Types;
 use crate::errors::LogIdNonConsecutive;
@@ -16,6 +20,25 @@ pub struct RaftLogState<T: Types> {
     pub(crate) purged: Option<T::LogId>,
 
     pub user_data: Option<T::UserData>,
+}
+
+impl<T> fmt::Display for RaftLogState<T>
+where
+    T: Types,
+    T::Vote: fmt::Display,
+    T::LogId: fmt::Display,
+    T::LogPayload: fmt::Display,
+    T::UserData: fmt::Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "RaftLogState(vote: {}, last: {}, committed: {}, purged: {}, user_data: {})",
+            self.vote.display(),
+               self.last.display(),
+            self.committed.display(),
+            self.purged.display(),
+            self.user_data.display()
+        )
+    }
 }
 
 impl<T: Types> codeq::Encode for RaftLogState<T> {
@@ -223,6 +246,7 @@ mod tests {
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
     use crate::testing::ss;
     use crate::testing::test_codec_without_corruption;
+    use crate::testing::TestDisplayTypes;
     use crate::testing::TestTypes;
 
     #[test]
@@ -255,5 +279,22 @@ mod tests {
         ];
 
         test_codec_without_corruption(&b, &state)
+    }
+
+    #[test]
+    fn test_raft_log_state_display() {
+        //
+        let state = RaftLogState::<TestDisplayTypes> {
+            vote: Some(1),
+            last: Some(2),
+            committed: Some(4),
+            purged: Some(6),
+            user_data: Some("hello".to_string()),
+        };
+
+        let got = state.to_string();
+        let want = "RaftLogState(vote: 1, last: 2, committed: 4, purged: 6, user_data: hello)";
+
+        assert_eq!(want, got);
     }
 }
