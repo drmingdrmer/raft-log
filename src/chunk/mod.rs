@@ -155,7 +155,6 @@ where T: Types
         let mut record_offsets = vec![chunk_id.offset()];
         let mut records = Vec::new();
         let mut truncate = false;
-        let mut truncated = None;
 
         for res in it {
             match res {
@@ -165,68 +164,26 @@ where T: Types
                 }
                 Err(io_err) => {
                     let global_offset = record_offsets.last().copied().unwrap();
-                    let at = format!(
-                        "at offset {} in chunk {}",
-                        format_pad9_u64(global_offset),
-                        chunk_id
-                    );
-                    error!(
-                        "Error reading record {at}: {}, error kind: {:?}; trying to recover...",
+                    truncate = Self::handle_record_error(
                         io_err,
-                        io_err.kind()
-                    );
-
-                    if io_err.kind() == io::ErrorKind::UnexpectedEof {
-                        // Incomplete record, discard it and all the following
-                        // records.
-                        truncate = config.truncate_incomplete_record();
-                        if truncate {
-                            warn!("UnexpectedEof {at}; truncating",);
-                            break;
-                        } else {
-                            error!("UnexpectedEof {at}; truncate disabled",);
-                        }
-                    } else {
-                        // Maybe damaged or unfinished write with trailing
-                        // zeros.
-                        //
-                        // Trailing zeros can happen if EXT4 is mounted with
-                        // `data=writeback` mode, with which, data
-                        // and metadata(file len) will be written to disk in
-                        // arbitrary order.
-
-                        let all_zero = Self::verify_trailing_zeros(
-                            arc_f.clone(),
-                            global_offset - chunk_id.offset(),
-                            chunk_id,
-                        )?;
-
-                        if all_zero {
-                            truncate = config.truncate_incomplete_record();
-                            if truncate {
-                                warn!("Trailing zeros {at}; truncating",);
-                                break;
-                            } else {
-                                error!(
-                                    "Trailing zeros {at}; truncate disabled",
-                                );
-                            }
-                        } else {
-                            error!("Damaged record({}) {at}", io_err,);
-                        }
-                    }
-
-                    return Err(io_err);
+                        arc_f.clone(),
+                        global_offset,
+                        chunk_id,
+                        &config,
+                    )?;
+                    break;
                 }
             };
         }
 
-        if truncate {
+        let truncated = if truncate {
             arc_f
                 .set_len(*record_offsets.last().unwrap() - chunk_id.offset())?;
             arc_f.sync_all()?;
-            truncated = Some(file_size);
-        }
+            Some(file_size)
+        } else {
+            None
+        };
 
         let chunk = Self {
             f: arc_f,
@@ -236,6 +193,62 @@ where T: Types
         };
 
         Ok((chunk, records))
+    }
+
+    /// Handles a record read error and determines if truncation should occur.
+    ///
+    /// Returns `Ok(true)` if the file should be truncated at the error
+    /// position. Returns `Err` if the error is unrecoverable.
+    fn handle_record_error(
+        io_err: io::Error,
+        file: Arc<File>,
+        global_offset: u64,
+        chunk_id: ChunkId,
+        config: &Config,
+    ) -> Result<bool, io::Error> {
+        let at = format!(
+            "at offset {} in chunk {}",
+            format_pad9_u64(global_offset),
+            chunk_id
+        );
+        error!(
+            "Error reading record {at}: {}, error kind: {:?}; trying to recover...",
+            io_err,
+            io_err.kind()
+        );
+
+        let can_truncate = config.truncate_incomplete_record();
+
+        // UnexpectedEof: incomplete record, can truncate if enabled
+        if io_err.kind() == io::ErrorKind::UnexpectedEof {
+            if can_truncate {
+                warn!("UnexpectedEof {at}; truncating");
+                return Ok(true);
+            }
+            error!("UnexpectedEof {at}; truncate disabled");
+            return Err(io_err);
+        }
+
+        // Other errors: check for trailing zeros (can happen with EXT4
+        // data=writeback mode where data and metadata are written in arbitrary
+        // order)
+        let all_zero = Self::verify_trailing_zeros(
+            file,
+            global_offset - chunk_id.offset(),
+            chunk_id,
+        )?;
+
+        if all_zero && can_truncate {
+            warn!("Trailing zeros {at}; truncating");
+            return Ok(true);
+        }
+
+        if all_zero {
+            error!("Trailing zeros {at}; truncate disabled");
+        } else {
+            error!("Damaged record({}) {at}", io_err);
+        }
+        Err(io_err)
     }
 
     /// Checks if a file contains only zero bytes from a specified offset to the

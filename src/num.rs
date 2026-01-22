@@ -1,29 +1,26 @@
-/// Format number in Rust style: `1_000_000`, keep max length of u64, 20 digits.
-pub(crate) fn format_pad_u64(n: u64) -> String {
-    // separate each 3 digit with a '_'
-    format!("{:020}", n).chars().enumerate().fold(
-        String::new(),
-        |mut acc, (i, c)| {
-            if (i + 1) % 3 == 0 {
-                acc.push('_');
-            }
-            acc.push(c);
-            acc
-        },
-    )
-}
-
-pub(crate) fn format_pad9_u64(n: u64) -> String {
-    // separate each 3 digit with a '_'
-    let x = format!("{:09}", n);
-    let len = x.len();
-    x.chars().enumerate().fold(String::new(), |mut acc, (i, c)| {
+/// Format number with underscore grouping (Rust style: `1_000_000`).
+///
+/// Pads the number to `min_width` digits and inserts underscores every 3
+/// digits.
+fn format_grouped(n: u64, min_width: usize) -> String {
+    let s = format!("{:0width$}", n, width = min_width);
+    let len = s.len();
+    s.chars().enumerate().fold(String::new(), |mut acc, (i, c)| {
         if i > 0 && (len - i) % 3 == 0 {
             acc.push('_');
         }
         acc.push(c);
         acc
     })
+}
+
+/// Format number in Rust style: `1_000_000`, keep max length of u64, 20 digits.
+pub(crate) fn format_pad_u64(n: u64) -> String {
+    format_grouped(n, 20)
+}
+
+pub(crate) fn format_pad9_u64(n: u64) -> String {
+    format_grouped(n, 9)
 }
 
 #[cfg(test)]
