@@ -6,6 +6,7 @@ use codeq::Codec;
 
 use crate::api::types::Types;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Default)]
 pub(crate) struct TestTypes;
@@ -32,6 +33,7 @@ impl Types for TestTypes {
 }
 
 /// Type config to test Display implementation
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Default)]
 pub(crate) struct TestDisplayTypes;

@@ -129,10 +129,7 @@ where T: Types<Callback = SyncSender<Result<(), io::Error>>> {
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     rl.flush(tx)?;
     rx.recv().map_err(|_e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "Failed to receive flush completion",
-        )
+        io::Error::other("Failed to receive flush completion")
     })??;
     Ok(())
 }

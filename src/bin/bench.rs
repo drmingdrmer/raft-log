@@ -10,6 +10,7 @@ use raft_log::api::raft_log_writer::RaftLogWriter;
 use raft_log::Config;
 use raft_log::Types;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(Default)]
 pub(crate) struct TestTypes;

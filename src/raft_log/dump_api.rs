@@ -12,8 +12,7 @@ pub trait DumpApi<T: Types> {
     fn write_to_string(&self) -> Result<String, io::Error> {
         let mut buf = Vec::new();
         self.write(&mut buf)?;
-        String::from_utf8(buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        String::from_utf8(buf).map_err(io::Error::other)
     }
 
     /// Writes the Raft log contents to the provided writer.

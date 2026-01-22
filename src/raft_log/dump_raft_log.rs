@@ -34,7 +34,7 @@ impl<T: Types> DumpRaftLog<T> {
     /// The iterator yields Result<(log_id, payload), io::Error> pairs. The
     /// payload is retrieved either from cache or by reading from the
     /// underlying chunk storage.
-    pub fn iter(&mut self) -> DumpRaftLogIter<T> {
+    pub fn iter(&mut self) -> DumpRaftLogIter<'_, T> {
         DumpRaftLogIter { i: 0, data: self }
     }
 }

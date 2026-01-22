@@ -105,10 +105,7 @@ where T: Types
                 callback,
             }))
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to send sync request: {}", e),
-                )
+                io::Error::other(format!("Failed to send sync request: {}", e))
             })
     }
 
@@ -127,10 +124,10 @@ where T: Types
     ) -> Result<(), io::Error> {
         self.flush_tx.send(FlushRequest::RemoveChunks { chunk_paths }).map_err(
             |e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to send remove chunks request: {}", e),
-                )
+                io::Error::other(format!(
+                    "Failed to send remove chunks request: {}",
+                    e
+                ))
             },
         )
     }
@@ -140,10 +137,10 @@ where T: Types
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         self.send_get_stat(tx)?;
         rx.recv().map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to receive get state response: {}", e),
-            )
+            io::Error::other(format!(
+                "Failed to receive get state response: {}",
+                e
+            ))
         })
     }
 
@@ -154,10 +151,10 @@ where T: Types
     ) -> Result<(), io::Error> {
         self.flush_tx.send(FlushRequest::GetFlushStat { tx: callback }).map_err(
             |e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to send get state request: {}", e),
-                )
+                io::Error::other(format!(
+                    "Failed to send get state request: {}",
+                    e
+                ))
             },
         )
     }
@@ -223,10 +220,10 @@ where T: Types
                 state.last().cloned(),
             )))
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to send FlushRequest::AppendFile: {}", e),
-                )
+                io::Error::other(format!(
+                    "Failed to send FlushRequest::AppendFile: {}",
+                    e
+                ))
             })?;
 
         let chunk = new_open.chunk;
