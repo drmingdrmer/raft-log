@@ -33,9 +33,7 @@ pub trait DumpApi<T: Types> {
     /// Writes the Raft log contents to the provided writer, using
     /// `std::fmt::Display` for record formatting.
     fn write_display<W: io::Write>(&self, mut w: W) -> Result<(), io::Error>
-    where
-        WALRecord<T>: std::fmt::Display,
-    {
+    where WALRecord<T>: std::fmt::Display {
         writeln!(&mut w, "RaftLog:")?;
         let write_record = |chunk_id, in_chunk_record_index, res| {
             dump_writer::write_record_display(
@@ -86,9 +84,11 @@ mod tests {
 
     impl DumpApi<TestDisplayTypes> for MockDump {
         fn write_with<D>(&self, mut write_record: D) -> Result<(), io::Error>
-        where
-            D: FnMut(ChunkId, u64, Result<(Segment, WALRecord<TestDisplayTypes>), io::Error>) -> Result<(), io::Error>,
-        {
+        where D: FnMut(
+                ChunkId,
+                u64,
+                Result<(Segment, WALRecord<TestDisplayTypes>), io::Error>,
+            ) -> Result<(), io::Error> {
             write_record(ChunkId(0), 0, Ok((self.seg, self.record.clone())))?;
             Ok(())
         }
@@ -149,7 +149,11 @@ mod tests {
         let mut custom_output = Vec::new();
         dump.write_with(|chunk_id, index, res| {
             if let Ok((_, rec)) = res {
-                writeln!(&mut custom_output, "custom: {} {} {:?}", chunk_id.0, index, rec)?;
+                writeln!(
+                    &mut custom_output,
+                    "custom: {} {} {:?}",
+                    chunk_id.0, index, rec
+                )?;
             }
             Ok(())
         })?;

@@ -32,7 +32,7 @@ use crate::DumpApi;
 /// - it re-open the last closed chunk by default
 /// - continue writing
 #[test]
-fn test_re_open() -> Result<(), io::Error> {
+fn test_reopen() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     {
         let config = &mut ctx.config;
@@ -130,7 +130,7 @@ fn test_re_open() -> Result<(), io::Error> {
 
 /// The last record will be discarded if it is not completely written.
 #[test]
-fn test_re_open_unfinished_chunk() -> Result<(), io::Error> {
+fn test_reopen_unfinished_chunk() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
@@ -195,7 +195,7 @@ ChunkId(00_000_000_000_000_000_610)
 /// with which, data and metadata(file len) will be written to disk in
 /// arbitrary order.
 #[test]
-fn test_re_open_unfinished_tailing_zero_chunk() -> Result<(), io::Error> {
+fn test_reopen_unfinished_tailing_zero_chunk() -> Result<(), io::Error> {
     for append_zeros in [3, 1024 * 33] {
         let mut ctx = TestContext::new()?;
         let config = &mut ctx.config;
@@ -257,7 +257,7 @@ ChunkId(00_000_000_000_000_000_638)
 }
 
 #[test]
-fn test_re_open_unfinished_tailing_not_all_zero_chunk() -> Result<(), io::Error>
+fn test_reopen_unfinished_tailing_not_all_zero_chunk() -> Result<(), io::Error>
 {
     let append_zeros = 1024 * 32;
 
@@ -281,7 +281,7 @@ fn test_re_open_unfinished_tailing_not_all_zero_chunk() -> Result<(), io::Error>
         f.write_u8(1)?;
     }
 
-    // Re-open
+    // Re-open should fail because damaged bytes always return error
     {
         let res = ctx.new_raft_log();
         assert!(res.is_err());
@@ -322,7 +322,7 @@ Error: crc32 checksum mismatch: expected fd59b8d, got 0, while Record::decode();
 /// A damaged last record of non-last chunk will not be truncated, but is
 /// considered damage.
 #[test]
-fn test_re_open_unfinished_non_last_chunk() -> Result<(), io::Error> {
+fn test_reopen_unfinished_non_last_chunk() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
@@ -377,7 +377,7 @@ ChunkId(00_000_000_000_000_000_509)
 
 /// The last record is damaged, do not truncate, return an IO error.
 #[test]
-fn test_re_open_damaged_last_record() -> Result<(), io::Error> {
+fn test_reopen_damaged_last_record() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 

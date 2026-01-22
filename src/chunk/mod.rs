@@ -31,6 +31,7 @@ use log::warn;
 use record_iterator::RecordIterator;
 
 use crate::chunk::chunk_id::ChunkId;
+use crate::num::format_pad9_u64;
 use crate::types::Segment;
 use crate::Config;
 use crate::Types;
@@ -164,13 +165,25 @@ where T: Types
                 }
                 Err(io_err) => {
                     let global_offset = record_offsets.last().copied().unwrap();
+                    let at = format!(
+                        "at offset {} in chunk {}",
+                        format_pad9_u64(global_offset),
+                        chunk_id
+                    );
+                    error!(
+                        "Error reading record {at}: {}, error kind: {:?}; trying to recover...",
+                        io_err, io_err.kind()
+                    );
 
                     if io_err.kind() == io::ErrorKind::UnexpectedEof {
                         // Incomplete record, discard it and all the following
                         // records.
                         truncate = config.truncate_incomplete_record();
                         if truncate {
+                            warn!("UnexpectedEof {at}; truncating",);
                             break;
+                        } else {
+                            error!("UnexpectedEof {at}; truncate disabled",);
                         }
                     } else {
                         // Maybe damaged or unfinished write with trailing
@@ -188,17 +201,17 @@ where T: Types
                         )?;
 
                         if all_zero {
-                            warn!(
-                                "Trailing zeros detected at {} in chunk {}; Treat it as unfinished write",
-                                global_offset,
-                                chunk_id
-                            );
                             truncate = config.truncate_incomplete_record();
                             if truncate {
+                                warn!("Trailing zeros {at}; truncating",);
                                 break;
+                            } else {
+                                error!(
+                                    "Trailing zeros {at}; truncate disabled",
+                                );
                             }
                         } else {
-                            error!("Found damaged bytes: {}", io_err);
+                            error!("Damaged record({}) {at}", io_err,);
                         }
                     }
 
