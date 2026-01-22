@@ -5,10 +5,10 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use goldenfile::Mint;
-use raft_log::api::raft_log_writer::RaftLogWriter;
 use raft_log::Config;
 use raft_log::RaftLog;
 use raft_log::Types;
+use raft_log::api::raft_log_writer::RaftLogWriter;
 use tempfile::TempDir;
 
 // Define the types for our test

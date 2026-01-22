@@ -31,9 +31,11 @@ where
     T::UserData: fmt::Display,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "RaftLogState(vote: {}, last: {}, committed: {}, purged: {}, user_data: {})",
+        write!(
+            f,
+            "RaftLogState(vote: {}, last: {}, committed: {}, purged: {}, user_data: {})",
             self.vote.display(),
-               self.last.display(),
+            self.last.display(),
             self.committed.display(),
             self.purged.display(),
             self.user_data.display()
@@ -244,10 +246,10 @@ mod tests {
     use std::io;
 
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-    use crate::testing::ss;
-    use crate::testing::test_codec_without_corruption;
     use crate::testing::TestDisplayTypes;
     use crate::testing::TestTypes;
+    use crate::testing::ss;
+    use crate::testing::test_codec_without_corruption;
 
     #[test]
     fn test_raft_log_state_codec() -> Result<(), io::Error> {

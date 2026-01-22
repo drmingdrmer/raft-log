@@ -68,8 +68,8 @@ impl Drop for FileLock {
 mod tests {
     use std::sync::Arc;
 
-    use crate::file_lock::FileLock;
     use crate::Config;
+    use crate::file_lock::FileLock;
 
     #[test]
     fn test_lock_file() {

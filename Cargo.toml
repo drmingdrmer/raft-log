@@ -1,7 +1,7 @@
 [package]
 name = "raft-log"
 version = "0.2.12"
-edition = "2021"
+edition = "2024"
 
 authors = [
     "Zhang Yanpo <drdr.xp@gmail.com>",

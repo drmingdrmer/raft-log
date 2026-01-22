@@ -1,18 +1,18 @@
 use std::fmt;
 use std::fs::File;
 use std::io;
-use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::mpsc::Receiver;
 
 use log::debug;
 use log::info;
 
+use crate::ChunkId;
+use crate::Types;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushRequest;
-use crate::ChunkId;
-use crate::Types;
 
 pub(crate) struct FileEntry<T: Types> {
     pub(crate) starting_offset: u64,

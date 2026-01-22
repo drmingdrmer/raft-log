@@ -1,8 +1,8 @@
 use std::format;
 
+use crate::ChunkId;
 use crate::errors::InvalidChunkFileName;
 use crate::num;
-use crate::ChunkId;
 
 /// Configuration for Raft-log.
 ///
@@ -169,18 +169,18 @@ mod tests {
             Ok(10_100_000_000_001_200_000)
         );
 
-        assert!(Config::parse_chunk_file_name(
-            "r-10_100_000_000_001_200_000_1.wal"
-        )
-        .is_err());
+        assert!(
+            Config::parse_chunk_file_name("r-10_100_000_000_001_200_000_1.wal")
+                .is_err()
+        );
         assert!(Config::parse_chunk_file_name("r-1000000000.wal").is_err());
-        assert!(Config::parse_chunk_file_name(
-            "r-10_100_000_000_001_200_000.wall"
-        )
-        .is_err());
-        assert!(Config::parse_chunk_file_name(
-            "rrr-10_100_000_000_001_200_000.wal"
-        )
-        .is_err());
+        assert!(
+            Config::parse_chunk_file_name("r-10_100_000_000_001_200_000.wall")
+                .is_err()
+        );
+        assert!(
+            Config::parse_chunk_file_name("rrr-10_100_000_000_001_200_000.wal")
+                .is_err()
+        );
     }
 }

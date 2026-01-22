@@ -1,14 +1,14 @@
 use std::io;
 use std::marker::PhantomData;
 
-use codeq::error_context_ext::ErrorContextExt;
 use codeq::Decode;
+use codeq::error_context_ext::ErrorContextExt;
 
-use crate::offset_reader::OffsetReader;
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
+use crate::offset_reader::OffsetReader;
+use crate::types::Segment;
 
 pub(crate) struct RecordIterator<R, T> {
     r: OffsetReader<R>,

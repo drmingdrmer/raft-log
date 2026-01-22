@@ -3,11 +3,11 @@ use std::io;
 
 use codeq::OffsetSize;
 
-use crate::num::format_pad9_u64;
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
+use crate::num::format_pad9_u64;
+use crate::types::Segment;
 
 pub fn write_record_debug<T: Types, W: io::Write>(
     w: &mut W,

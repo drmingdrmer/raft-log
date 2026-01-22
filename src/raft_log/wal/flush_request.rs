@@ -1,7 +1,7 @@
 use std::sync::mpsc::SyncSender;
 
-use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::Types;
+use crate::raft_log::wal::flush_worker::FileEntry;
 
 pub(crate) struct Flush<T: Types> {
     /// fdatasync the data in WAL at least upto this offset, inclusive.

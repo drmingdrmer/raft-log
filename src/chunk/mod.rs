@@ -23,19 +23,19 @@ use std::io::Seek;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use codeq::error_context_ext::ErrorContextExt;
 use codeq::Decode;
 use codeq::OffsetSize;
+use codeq::error_context_ext::ErrorContextExt;
 use log::error;
 use log::warn;
 use record_iterator::RecordIterator;
 
-use crate::chunk::chunk_id::ChunkId;
-use crate::num::format_pad9_u64;
-use crate::types::Segment;
 use crate::Config;
 use crate::Types;
 use crate::WALRecord;
+use crate::chunk::chunk_id::ChunkId;
+use crate::num::format_pad9_u64;
+use crate::types::Segment;
 
 /// Represents a chunk of the Write-Ahead Log containing a sequence of records.
 ///
@@ -172,7 +172,8 @@ where T: Types
                     );
                     error!(
                         "Error reading record {at}: {}, error kind: {:?}; trying to recover...",
-                        io_err, io_err.kind()
+                        io_err,
+                        io_err.kind()
                     );
 
                     if io_err.kind() == io::ErrorKind::UnexpectedEof {

@@ -5,14 +5,14 @@
 //! - Managing vote and commit information
 
 use std::io;
-use std::sync::mpsc::sync_channel;
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::sync_channel;
 
-use raft_log::api::raft_log_writer::RaftLogWriter;
-use raft_log::api::types::Types;
 use raft_log::Config;
 use raft_log::RaftLog;
+use raft_log::api::raft_log_writer::RaftLogWriter;
+use raft_log::api::types::Types;
 
 // Define our application-specific types used in this RaftLog storage.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

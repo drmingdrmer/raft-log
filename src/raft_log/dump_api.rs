@@ -1,10 +1,10 @@
 use std::io;
 
-use crate::dump_writer;
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
+use crate::dump_writer;
+use crate::types::Segment;
 
 /// A trait for dumping Raft log contents in a human-readable format.
 pub trait DumpApi<T: Types> {

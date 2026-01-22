@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::io;
 
-use crate::chunk::closed_chunk::ClosedChunk;
-use crate::raft_log::log_data::LogData;
-use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::ChunkId;
 use crate::Types;
 use crate::WALRecord;
+use crate::chunk::closed_chunk::ClosedChunk;
+use crate::raft_log::log_data::LogData;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 /// A struct that contains a snapshot of RaftLog data for inspection or
 /// debugging.
@@ -117,13 +117,13 @@ mod tests {
 
     use indoc::indoc;
 
-    use crate::api::raft_log_writer::blocking_flush;
-    use crate::api::raft_log_writer::RaftLogWriter;
-    use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-    use crate::testing::ss;
-    use crate::testing::TestTypes;
-    use crate::tests::context::TestContext;
     use crate::RaftLog;
+    use crate::api::raft_log_writer::RaftLogWriter;
+    use crate::api::raft_log_writer::blocking_flush;
+    use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+    use crate::testing::TestTypes;
+    use crate::testing::ss;
+    use crate::tests::context::TestContext;
 
     #[test]
     fn test_dump_data() -> Result<(), io::Error> {

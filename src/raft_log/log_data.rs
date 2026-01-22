@@ -1,6 +1,6 @@
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Types;
+use crate::types::Segment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LogData<T: Types> {

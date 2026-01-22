@@ -15,9 +15,9 @@
 use std::io;
 use std::sync::mpsc::SyncSender;
 
-use crate::types::Segment;
 use crate::RaftLog;
 use crate::Types;
+use crate::types::Segment;
 
 /// Define the writing interface for the Raft-log.
 ///

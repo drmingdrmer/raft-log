@@ -161,9 +161,9 @@ mod tests {
 
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
     use crate::raft_log::wal::wal_record::WALRecord;
-    use crate::testing::ss;
     use crate::testing::TestDisplayTypes;
     use crate::testing::TestTypes;
+    use crate::testing::ss;
 
     #[test]
     fn test_record_codec_vote() -> Result<(), io::Error> {
@@ -291,8 +291,7 @@ mod tests {
 
         let got = format!("{}", records.display_n(1000));
 
-        let want =
-        "[SaveVote(1),Append(log_id: 3, payload: hello),Commit(5),TruncateAfter(7),PurgeUpto(9),RaftLogState(RaftLogState(vote: 1, last: 3, committed: 4, purged: 6, user_data: hello))]";
+        let want = "[SaveVote(1),Append(log_id: 3, payload: hello),Commit(5),TruncateAfter(7),PurgeUpto(9),RaftLogState(RaftLogState(vote: 1, last: 3, committed: 4, purged: 6, user_data: hello))]";
 
         assert_eq!(want, got);
     }

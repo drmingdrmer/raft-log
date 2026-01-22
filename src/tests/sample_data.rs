@@ -13,12 +13,12 @@ use std::time::Duration;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
-use crate::api::raft_log_writer::blocking_flush;
-use crate::api::raft_log_writer::RaftLogWriter;
-use crate::testing::ss;
-use crate::testing::TestTypes;
 use crate::DumpApi;
 use crate::RaftLog;
+use crate::api::raft_log_writer::RaftLogWriter;
+use crate::api::raft_log_writer::blocking_flush;
+use crate::testing::TestTypes;
+use crate::testing::ss;
 
 pub fn build_sample_data_purge_upto_3(
     rl: &mut RaftLog<TestTypes>,

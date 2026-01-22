@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use codeq::Encode;
 
-use crate::chunk::Chunk;
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Config;
 use crate::Types;
 use crate::WALRecord;
+use crate::chunk::Chunk;
+use crate::types::Segment;
 
 #[derive(Debug)]
 pub(crate) struct OpenChunk<T: Types> {

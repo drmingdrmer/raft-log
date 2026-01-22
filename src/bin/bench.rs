@@ -6,9 +6,9 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
-use raft_log::api::raft_log_writer::RaftLogWriter;
 use raft_log::Config;
 use raft_log::Types;
+use raft_log::api::raft_log_writer::RaftLogWriter;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]

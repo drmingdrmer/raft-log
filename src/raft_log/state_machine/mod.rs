@@ -5,14 +5,14 @@ use std::sync::RwLock;
 use payload_cache::PayloadCache;
 use raft_log_state::RaftLogState;
 
-use crate::api::state_machine::StateMachine;
-use crate::errors::RaftLogStateError;
-use crate::raft_log::log_data::LogData;
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Config;
 use crate::Types;
 use crate::WALRecord;
+use crate::api::state_machine::StateMachine;
+use crate::errors::RaftLogStateError;
+use crate::raft_log::log_data::LogData;
+use crate::types::Segment;
 
 pub(crate) mod payload_cache;
 pub mod raft_log_state;

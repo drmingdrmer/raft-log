@@ -28,8 +28,8 @@ pub(crate) fn format_pad9_u64(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_pad9_u64;
     use super::format_pad_u64;
+    use super::format_pad9_u64;
 
     #[test]
     fn test_format_aligned_num() {

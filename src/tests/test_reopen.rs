@@ -17,16 +17,16 @@ use byteorder::WriteBytesExt;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
-use crate::api::raft_log_writer::blocking_flush;
-use crate::api::raft_log_writer::RaftLogWriter;
-use crate::chunk::Chunk;
-use crate::testing::ss;
-use crate::testing::TestTypes;
-use crate::tests::context::TestContext;
-use crate::tests::sample_data;
 use crate::ChunkId;
 use crate::Dump;
 use crate::DumpApi;
+use crate::api::raft_log_writer::RaftLogWriter;
+use crate::api::raft_log_writer::blocking_flush;
+use crate::chunk::Chunk;
+use crate::testing::TestTypes;
+use crate::testing::ss;
+use crate::tests::context::TestContext;
+use crate::tests::sample_data;
 
 /// Reopened RaftLog should have the same state and entries as before.
 /// - it re-open the last closed chunk by default
@@ -349,7 +349,10 @@ fn test_reopen_unfinished_non_last_chunk() -> Result<(), io::Error> {
         let res = ctx.new_raft_log();
         assert!(res.is_err());
         // The last record of the second last chunk is damaged and is truncated.
-        assert_eq!("Gap between chunks: 00_000_000_000_000_000_474 -> 00_000_000_000_000_000_509; Can not open, fix this error and re-open", res.unwrap_err().to_string());
+        assert_eq!(
+            "Gap between chunks: 00_000_000_000_000_000_474 -> 00_000_000_000_000_000_509; Can not open, fix this error and re-open",
+            res.unwrap_err().to_string()
+        );
 
         let dump =
             Dump::<TestTypes>::new(ctx.arc_config())?.write_to_string()?;

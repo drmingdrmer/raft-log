@@ -4,14 +4,18 @@ pub(crate) mod flush_worker;
 
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::mpsc::SyncSender;
 
 use codeq::OffsetSize;
 pub(crate) use flush_request::FlushRequest;
 use log::info;
 
+use crate::ChunkId;
+use crate::Config;
+use crate::Types;
+use crate::WALRecord;
 use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
@@ -22,10 +26,6 @@ use crate::raft_log::wal::flush_request::Flush;
 use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::raft_log::wal::flush_worker::FlushWorker;
 use crate::types::Segment;
-use crate::ChunkId;
-use crate::Config;
-use crate::Types;
-use crate::WALRecord;
 
 pub(crate) mod wal_record;
 

@@ -2,15 +2,15 @@ use std::io;
 use std::io::Error;
 use std::sync::Arc;
 
-use crate::chunk::Chunk;
-use crate::file_lock;
-use crate::raft_log::dump_api::DumpApi;
-use crate::types::Segment;
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLog;
 use crate::Types;
 use crate::WALRecord;
+use crate::chunk::Chunk;
+use crate::file_lock;
+use crate::raft_log::dump_api::DumpApi;
+use crate::types::Segment;
 
 /// A dump utility that reads WAL records from disk.
 ///

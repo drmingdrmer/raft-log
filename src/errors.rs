@@ -48,7 +48,9 @@ impl<T: Types> VoteReversal<T> {
 /// Error indicating that a log id cannot be reversed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(thiserror::Error)]
-#[error("Log id cannot be reversed when {when}: current {current:?}, attempted {attempted:?}")]
+#[error(
+    "Log id cannot be reversed when {when}: current {current:?}, attempted {attempted:?}"
+)]
 pub struct LogIdReversal<T: Types> {
     pub current: T::LogId,
     pub attempted: T::LogId,
@@ -72,7 +74,9 @@ impl<T: Types> LogIdReversal<T> {
 /// Error indicating that a log id is not consecutive to the last know one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(thiserror::Error)]
-#[error("Log id is not consecutive when append: last {last:?}, attempted {attempted:?}")]
+#[error(
+    "Log id is not consecutive when append: last {last:?}, attempted {attempted:?}"
+)]
 pub struct LogIdNonConsecutive<T: Types> {
     pub last: Option<T::LogId>,
     pub attempted: T::LogId,

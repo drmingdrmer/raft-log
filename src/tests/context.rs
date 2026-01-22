@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 
+use crate::Config;
 use crate::raft_log::raft_log::RaftLog;
 use crate::testing::TestTypes;
-use crate::Config;
 
-pub(crate) fn new_testing(
-) -> Result<(TestContext, RaftLog<TestTypes>), io::Error> {
+pub(crate) fn new_testing()
+-> Result<(TestContext, RaftLog<TestTypes>), io::Error> {
     let ctx = TestContext::new()?;
     let rl = ctx.new_raft_log()?;
 

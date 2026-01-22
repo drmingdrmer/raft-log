@@ -1,11 +1,11 @@
 use std::fmt;
 use std::fmt::Formatter;
 
+use crate::ChunkId;
+use crate::Types;
 use crate::disp::display_option::DebugOption;
 use crate::num::format_pad9_u64;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::ChunkId;
-use crate::Types;
 
 /// Statistics about a Raft log, including information about closed chunks, open
 /// chunk, and payload cache performance metrics.

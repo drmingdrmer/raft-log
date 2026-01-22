@@ -2,8 +2,8 @@
 
 use std::fmt::Debug;
 
-use crate::types::Segment;
 use crate::ChunkId;
+use crate::types::Segment;
 
 /// A trait representing a state machine of [`WAL`] that can apply records to
 /// modify its state.

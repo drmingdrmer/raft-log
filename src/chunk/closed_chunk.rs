@@ -1,7 +1,7 @@
+use crate::Types;
 use crate::chunk::Chunk;
 use crate::raft_log::stat::ChunkStat;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::Types;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ClosedChunk<T>

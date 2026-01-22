@@ -1,18 +1,22 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
-use codeq::error_context_ext::ErrorContextExt;
 use codeq::OffsetSize;
+use codeq::error_context_ext::ErrorContextExt;
 use log::info;
 
+use crate::ChunkId;
+use crate::Config;
+use crate::Types;
+use crate::WALRecord;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
+use crate::chunk::Chunk;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
-use crate::chunk::Chunk;
 use crate::errors::LogIndexNotFound;
 use crate::errors::RaftLogStateError;
 use crate::file_lock::FileLock;
@@ -22,14 +26,10 @@ use crate::raft_log::dump::RefDump;
 use crate::raft_log::dump_raft_log::DumpRaftLog;
 use crate::raft_log::stat::ChunkStat;
 use crate::raft_log::stat::Stat;
-use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::state_machine::RaftLogStateMachine;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::RaftLogWAL;
 use crate::types::Segment;
-use crate::ChunkId;
-use crate::Config;
-use crate::Types;
-use crate::WALRecord;
 
 /// RaftLog is a Write-Ahead-Log implementation for the Raft consensus protocol.
 ///
