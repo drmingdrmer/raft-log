@@ -21,6 +21,7 @@ use std::io::BufReader;
 use std::io::Read;
 use std::io::Seek;
 use std::marker::PhantomData;
+use std::os::unix::fs::FileExt;
 use std::sync::Arc;
 
 use codeq::Decode;
@@ -352,18 +353,22 @@ where T: Types
         Ok(RecordIterator::new(br, file_size, chunk_id))
     }
 
+    /// Read a record from the chunk at the specified segment.
+    ///
+    /// Uses `pread` (positional read) to atomically read from a specific offset
+    /// without changing the file position. This avoids race conditions when
+    /// multiple threads read from the same chunk concurrently.
     pub(crate) fn read_record(
         &self,
         segment: Segment,
     ) -> Result<WALRecord<T>, io::Error> {
-        let mut f = self.f.as_ref();
-        f.seek(io::SeekFrom::Start(
-            segment.offset().0 - self.global_start(),
-        ))?;
+        let offset = segment.offset().0 - self.global_start();
+        let size = *segment.size() as usize;
 
-        let br = io::BufReader::with_capacity(16 * 1024, f);
+        let mut buf = vec![0u8; size];
+        self.f.read_exact_at(&mut buf, offset)?;
 
-        WALRecord::<T>::decode(br).context(|| {
+        WALRecord::<T>::decode(&buf[..]).context(|| {
             format!("decode Record {:?} in {}", segment, self.chunk_id())
         })
     }
