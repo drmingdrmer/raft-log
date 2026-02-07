@@ -11,8 +11,8 @@
 
 use std::io;
 use std::io::Seek;
+use std::os::unix::fs::FileExt;
 
-use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
@@ -397,9 +397,9 @@ fn test_reopen_damaged_last_record() -> Result<(), io::Error> {
         let mut f =
             Chunk::<TestTypes>::open_chunk_file(&ctx.config, last_chunk_id)?;
 
-        f.seek(io::SeekFrom::Start(126))?;
-        let byt = f.read_u8()?;
-        let byt = byt.wrapping_add(1);
+        let mut byte_buf = [0u8; 1];
+        f.read_exact_at(&mut byte_buf, 126)?;
+        let byt = byte_buf[0].wrapping_add(1);
         f.seek(io::SeekFrom::Start(126))?;
         f.write_u8(byt)?;
     }

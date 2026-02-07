@@ -17,9 +17,6 @@ mod record_iterator;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
-use std::io::BufReader;
-use std::io::Read;
-use std::io::Seek;
 use std::marker::PhantomData;
 use std::os::unix::fs::FileExt;
 use std::sync::Arc;
@@ -261,7 +258,7 @@ where T: Types
     /// for detecting incomplete or interrupted writes where the remaining
     /// space may have been zero-filled.
     fn verify_trailing_zeros(
-        mut file: Arc<File>,
+        file: Arc<File>,
         mut start_offset: u64,
         chunk_id: ChunkId,
     ) -> Result<bool, io::Error> {
@@ -290,15 +287,11 @@ where T: Types
             );
         }
 
-        file.seek(io::SeekFrom::Start(start_offset))?;
-
-        const BUFFER_SIZE: usize = 16 * 1024 * 1024; // 16MB
         const READ_CHUNK_SIZE: usize = 1024; // 1KB
-        let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-        let mut buffer = vec![0; READ_CHUNK_SIZE];
+        let mut buffer = vec![0u8; READ_CHUNK_SIZE];
 
         loop {
-            let n = reader.read(&mut buffer)?;
+            let n = file.read_at(&mut buffer, start_offset)?;
             if n == 0 {
                 break;
             }
@@ -333,21 +326,21 @@ where T: Types
 
     /// Returns an iterator of `start, end, record` or error.
     ///
-    /// This method should always use a newly opened file.
-    /// Because `seek` may affect other open file descriptors.
+    /// This method requires a newly opened file whose position is at the
+    /// beginning, because the returned iterator reads sequentially from
+    /// the current file position via `BufReader`.
     pub(crate) fn load_records_iter(
         config: &Config,
-        mut f: Arc<File>,
+        f: Arc<File>,
         chunk_id: ChunkId,
     ) -> Result<
         impl Iterator<Item = Result<(Segment, WALRecord<T>), io::Error>> + '_,
         io::Error,
     > {
         let file_size = f
-            .seek(io::SeekFrom::End(0))
-            .context(|| format!("seek end of {chunk_id}"))?;
-        f.seek(io::SeekFrom::Start(0))
-            .context(|| format!("seek start of {chunk_id}"))?;
+            .metadata()
+            .context(|| format!("get file size of {chunk_id}"))?
+            .len();
 
         let br = io::BufReader::with_capacity(config.read_buffer_size(), f);
         Ok(RecordIterator::new(br, file_size, chunk_id))
