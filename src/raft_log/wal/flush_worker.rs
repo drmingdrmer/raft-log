@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs::File;
 use std::io;
+use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::mpsc::Receiver;
@@ -13,6 +14,7 @@ use crate::Types;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushRequest;
+use crate::raft_log::wal::flush_request::FlushStat;
 
 pub(crate) struct FileEntry<T: Types> {
     pub(crate) starting_offset: u64,
@@ -174,7 +176,11 @@ impl<T: Types> FlushWorker<T> {
                 let stat = self
                     .files
                     .iter()
-                    .map(|f| (f.starting_offset, f.sync_id))
+                    .map(|f| FlushStat {
+                        starting_offset: f.starting_offset,
+                        sync_id: f.sync_id,
+                        ino: f.f.metadata().unwrap().ino(),
+                    })
                     .collect();
                 let _ = tx.send(stat);
             }

@@ -10,6 +10,7 @@ use std::sync::mpsc::SyncSender;
 
 use codeq::OffsetSize;
 pub(crate) use flush_request::FlushRequest;
+pub(crate) use flush_request::FlushStat;
 use log::info;
 
 use crate::ChunkId;
@@ -133,7 +134,7 @@ where T: Types
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get_stat(&self) -> Result<Vec<(u64, u64)>, io::Error> {
+    pub(crate) fn get_stat(&self) -> Result<Vec<FlushStat>, io::Error> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         self.send_get_stat(tx)?;
         rx.recv().map_err(|e| {
@@ -147,7 +148,7 @@ where T: Types
     #[allow(dead_code)]
     pub(crate) fn send_get_stat(
         &self,
-        callback: SyncSender<Vec<(u64, u64)>>,
+        callback: SyncSender<Vec<FlushStat>>,
     ) -> Result<(), io::Error> {
         self.flush_tx.send(FlushRequest::GetFlushStat { tx: callback }).map_err(
             |e| {
@@ -216,7 +217,7 @@ where T: Types
         self.flush_tx
             .send(FlushRequest::AppendFile(FileEntry::new(
                 offset.0,
-                new_open.chunk.f.clone(),
+                self.open.chunk.f.clone(),
                 state.last().cloned(),
             )))
             .map_err(|e| {

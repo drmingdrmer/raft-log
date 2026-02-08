@@ -9,6 +9,7 @@ use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::raft_log_writer::blocking_flush;
 use crate::raft_log::dump_api::DumpApi;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::raft_log::wal::FlushStat;
 use crate::testing::ss;
 use crate::tests::context::TestContext;
 use crate::tests::context::new_testing;
@@ -674,7 +675,8 @@ fn test_sync() -> Result<(), io::Error> {
         ];
         rl.append(logs)?;
 
-        let flush_stat = rl.wal.get_stat()?;
+        let flush_stat: Vec<(u64, u64)> =
+            rl.wal.get_stat()?.iter().map(FlushStat::offset_sync_id).collect();
         assert_eq!(
             vec![(0, 0,), (161, 0,), (324, 0,), (509, 0)],
             flush_stat,
@@ -683,7 +685,8 @@ fn test_sync() -> Result<(), io::Error> {
 
         blocking_flush(&mut rl)?;
 
-        let flush_stat = rl.wal.get_stat()?;
+        let flush_stat: Vec<(u64, u64)> =
+            rl.wal.get_stat()?.iter().map(FlushStat::offset_sync_id).collect();
         assert_eq!(
             vec![(509, 610)],
             flush_stat,
@@ -698,7 +701,8 @@ fn test_sync() -> Result<(), io::Error> {
         rl.append(logs)?;
         blocking_flush(&mut rl)?;
 
-        let flush_stat = rl.wal.get_stat()?;
+        let flush_stat: Vec<(u64, u64)> =
+            rl.wal.get_stat()?.iter().map(FlushStat::offset_sync_id).collect();
         assert_eq!(
             vec![(509, 647)],
             flush_stat,
@@ -844,6 +848,36 @@ fn test_open_new_chunk_size() -> Result<(), io::Error> {
         println!("actual:\n{}", dump);
         assert_eq!(want_dumped, dump);
     }
+
+    Ok(())
+}
+
+#[test]
+fn test_flush_worker_tracks_new_chunk_file_after_rotation()
+-> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    ctx.config.chunk_max_records = Some(5);
+
+    let mut rl = ctx.new_raft_log()?;
+
+    // Append 4 logs. With the initial State record, chunk has 5 records ->
+    // full. Next append triggers rotation.
+    let logs = [
+        ((1, 0), ss("a")),
+        ((1, 1), ss("b")),
+        ((1, 2), ss("c")),
+        ((1, 3), ss("d")),
+    ];
+    rl.append(logs)?;
+
+    let stat = rl.wal.get_stat()?;
+    assert_eq!(2, stat.len(), "should have 2 tracked files after rotation");
+
+    assert_ne!(
+        stat[0].ino, stat[1].ino,
+        "FlushWorker should track two different files, got same inode {}",
+        stat[0].ino
+    );
 
     Ok(())
 }
