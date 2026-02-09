@@ -139,32 +139,30 @@ impl<T: Types> FlushWorker<T> {
 
                 let need_sync = batch.iter().any(|w| w.sync);
 
-                if need_sync {
+                let sync_result = if need_sync {
                     let upto_offset = batch.last().unwrap().upto_offset;
                     let res = self.sync_all_files(upto_offset);
+                    if let Err(ref e) = res {
+                        log::error!(
+                            "Failed to flush upto offset {}: {}",
+                            upto_offset,
+                            e
+                        );
+                    }
+                    Some(res)
+                } else {
+                    None
+                };
 
-                    match res {
-                        Ok(_) => {
-                            for w in batch {
-                                if let Some(cb) = w.callback {
-                                    cb.send(Ok(()));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to flush upto offset {}: {}",
-                                upto_offset,
-                                e
-                            );
-
-                            for w in batch {
-                                if let Some(cb) = w.callback {
-                                    cb.send(Err(io::Error::new(
-                                        e.kind(),
-                                        e.to_string(),
-                                    )));
-                                }
+                for w in batch {
+                    if let Some(cb) = w.callback {
+                        match &sync_result {
+                            None | Some(Ok(())) => cb.send(Ok(())),
+                            Some(Err(e)) => {
+                                cb.send(Err(io::Error::new(
+                                    e.kind(),
+                                    e.to_string(),
+                                )));
                             }
                         }
                     }
