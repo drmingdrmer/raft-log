@@ -1,9 +1,10 @@
 use std::fmt;
 use std::fmt::Formatter;
 
+use display_more::DisplayDebugOptionExt;
+
 use crate::ChunkId;
 use crate::Types;
-use crate::disp::display_option::DebugOption;
 use crate::num::format_pad9_u64;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
@@ -42,7 +43,7 @@ where T: Types
         write!(
             f,
             "Stat{{{lb} closed_chunks: [{lb}{idt}{}{lb} ],{lb} open_chunk: {},{lb} payload_cache:{{\
-            evictable: ..={:?},\
+            evictable: ..={},\
             item/max: {} / {},\
             size/cap: {} / {},\
             miss: {},\
@@ -55,7 +56,7 @@ where T: Types
                 .collect::<Vec<String>>()
                 .join(&format!(",{lb}{idt}")),
             self.open_chunk,
-            DebugOption(self.payload_cache_last_evictable.as_ref()),
+            self.payload_cache_last_evictable.display_debug(),
             format_pad9_u64(self.payload_cache_item_count),
             format_pad9_u64(self.payload_cache_max_item),
             format_pad9_u64(self.payload_cache_size),
