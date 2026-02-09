@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::SyncSender;
 
 use codeq::OffsetSize;
@@ -23,6 +25,7 @@ use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WriteRequest;
 use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::raft_log::wal::flush_worker::FlushWorker;
@@ -43,7 +46,9 @@ where T: Types
     pub(crate) open: OpenChunk<T>,
     pub(crate) closed: BTreeMap<ChunkId, ClosedChunk<T>>,
 
-    flush_tx: SyncSender<WorkerRequest<T>>,
+    flush_tx: SyncSender<SeqRequest<T>>,
+    sent_seq: u64,
+    done_seq: Arc<AtomicU64>,
 }
 
 impl<T> RaftLogWAL<T>
@@ -74,8 +79,10 @@ where T: Types
 
         let file_entry = FileEntry::new(offset, f, prev_last_log_id);
 
+        let done_seq = Arc::new(AtomicU64::new(0));
+
         let (flush_tx, rx) = std::sync::mpsc::sync_channel(1024);
-        let worker = FlushWorker::new(rx, file_entry, cache);
+        let worker = FlushWorker::new(rx, file_entry, cache, done_seq.clone());
 
         worker.spawn();
 
@@ -84,6 +91,8 @@ where T: Types
             open,
             closed,
             flush_tx,
+            sent_seq: 0,
+            done_seq,
         }
     }
 
@@ -96,21 +105,35 @@ where T: Types
     /// # Errors
     ///
     /// Returns an IO error if the flush request cannot be sent
+    fn send_request(&mut self, req: WorkerRequest<T>) -> Result<(), io::Error> {
+        self.sent_seq += 1;
+        self.flush_tx
+            .send(SeqRequest {
+                seq: self.sent_seq,
+                req,
+            })
+            .map_err(|e| {
+                io::Error::other(format!("Failed to send request: {}", e))
+            })
+    }
+
+    pub(crate) fn wait_worker_idle(&self) {
+        while self.done_seq.load(Ordering::Relaxed) < self.sent_seq {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     pub(crate) fn send_flush(
         &mut self,
         callback: T::Callback,
     ) -> Result<(), io::Error> {
         let data = self.open.take_pending_data();
-        self.flush_tx
-            .send(WorkerRequest::Write(WriteRequest {
-                upto_offset: self.open.chunk.global_end(),
-                data,
-                sync: true,
-                callback: Some(callback),
-            }))
-            .map_err(|e| {
-                io::Error::other(format!("Failed to send sync request: {}", e))
-            })
+        self.send_request(WorkerRequest::Write(WriteRequest {
+            upto_offset: self.open.chunk.global_end(),
+            data,
+            sync: true,
+            callback: Some(callback),
+        }))
     }
 
     /// Requests removal of specified chunk files.
@@ -123,21 +146,14 @@ where T: Types
     ///
     /// Returns an IO error if the remove request cannot be sent
     pub(crate) fn send_remove_chunks(
-        &self,
+        &mut self,
         chunk_paths: Vec<String>,
     ) -> Result<(), io::Error> {
-        self.flush_tx.send(WorkerRequest::RemoveChunks { chunk_paths }).map_err(
-            |e| {
-                io::Error::other(format!(
-                    "Failed to send remove chunks request: {}",
-                    e
-                ))
-            },
-        )
+        self.send_request(WorkerRequest::RemoveChunks { chunk_paths })
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get_stat(&self) -> Result<Vec<FlushStat>, io::Error> {
+    pub(crate) fn get_stat(&mut self) -> Result<Vec<FlushStat>, io::Error> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         self.send_get_stat(tx)?;
         rx.recv().map_err(|e| {
@@ -150,17 +166,10 @@ where T: Types
 
     #[allow(dead_code)]
     pub(crate) fn send_get_stat(
-        &self,
+        &mut self,
         callback: SyncSender<Vec<FlushStat>>,
     ) -> Result<(), io::Error> {
-        self.flush_tx
-            .send(WorkerRequest::GetFlushStat { tx: callback })
-            .map_err(|e| {
-                io::Error::other(format!(
-                    "Failed to send get state request: {}",
-                    e
-                ))
-            })
+        self.send_request(WorkerRequest::GetFlushStat { tx: callback })
     }
 
     /// Checks if the current open chunk has reached its capacity.
@@ -220,33 +229,19 @@ where T: Types
 
         let prev_pending_data = old_open.take_pending_data();
         if !prev_pending_data.is_empty() {
-            self.flush_tx
-                .send(WorkerRequest::Write(WriteRequest {
-                    upto_offset: offset.0,
-                    data: prev_pending_data,
-                    sync: true,
-                    callback: None,
-                }))
-                .map_err(|e| {
-                    io::Error::other(format!(
-                        "Failed to send FlushRequest::Write(write-only): {}",
-                        e
-                    ))
-                })?;
+            self.send_request(WorkerRequest::Write(WriteRequest {
+                upto_offset: offset.0,
+                data: prev_pending_data,
+                sync: true,
+                callback: None,
+            }))?;
         }
 
-        self.flush_tx
-            .send(WorkerRequest::AppendFile(FileEntry::new(
-                offset.0,
-                self.open.chunk.f.clone(),
-                state.last().cloned(),
-            )))
-            .map_err(|e| {
-                io::Error::other(format!(
-                    "Failed to send FlushRequest::AppendFile: {}",
-                    e
-                ))
-            })?;
+        self.send_request(WorkerRequest::AppendFile(FileEntry::new(
+            offset.0,
+            self.open.chunk.f.clone(),
+            state.last().cloned(),
+        )))?;
 
         let chunk = old_open.chunk;
         let closed_id = chunk.chunk_id();

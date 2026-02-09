@@ -3,6 +3,11 @@ use std::sync::mpsc::SyncSender;
 use crate::Types;
 use crate::raft_log::wal::flush_worker::FileEntry;
 
+pub(crate) struct SeqRequest<T: Types> {
+    pub(crate) seq: u64,
+    pub(crate) req: WorkerRequest<T>,
+}
+
 pub(crate) struct WriteRequest<T: Types> {
     pub(crate) upto_offset: u64,
     pub(crate) data: Vec<u8>,

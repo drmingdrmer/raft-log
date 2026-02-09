@@ -96,6 +96,9 @@ fn test_massive_load() -> std::io::Result<()> {
                 let state = log.log_state();
                 writeln!(file, "{:?}", state)?;
 
+                log.wait_worker_idle();
+                log.drain_cache_evictable();
+
                 let stat = log.stat();
                 writeln!(file, "{:#}", stat)?;
 
@@ -104,6 +107,9 @@ fn test_massive_load() -> std::io::Result<()> {
                 }
             }
         }
+
+        log.wait_worker_idle();
+        log.drain_cache_evictable();
 
         let stat = log.stat();
         writeln!(file, "sync start: {:#}", stat)?;

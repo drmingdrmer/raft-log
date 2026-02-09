@@ -5,6 +5,8 @@ use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 
 use log::debug;
@@ -15,6 +17,7 @@ use crate::Types;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushStat;
+use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WorkerRequest;
 
 pub(crate) struct FileEntry<T: Types> {
@@ -60,9 +63,10 @@ impl<T: Types> FileEntry<T> {
 }
 
 pub(crate) struct FlushWorker<T: Types> {
-    rx: Receiver<WorkerRequest<T>>,
+    rx: Receiver<SeqRequest<T>>,
     files: Vec<FileEntry<T>>,
     cache: Arc<RwLock<PayloadCache<T>>>,
+    done_seq: Arc<AtomicU64>,
 }
 
 impl<T: Types> FlushWorker<T> {
@@ -77,14 +81,16 @@ impl<T: Types> FlushWorker<T> {
     }
 
     pub(crate) fn new(
-        rx: Receiver<WorkerRequest<T>>,
+        rx: Receiver<SeqRequest<T>>,
         file_entry: FileEntry<T>,
         cache: Arc<RwLock<PayloadCache<T>>>,
+        done_seq: Arc<AtomicU64>,
     ) -> Self {
         Self {
             rx,
             files: vec![file_entry],
             cache,
+            done_seq,
         }
     }
 
@@ -98,13 +104,14 @@ impl<T: Types> FlushWorker<T> {
     fn run_inner(mut self) -> Result<(), io::Error> {
         loop {
             let req = self.rx.recv();
-            let Ok(req) = req else {
+            let Ok(SeqRequest { seq, req }) = req else {
                 log::info!("FlushWorker input channel closed, quit");
                 return Ok(());
             };
 
             let WorkerRequest::Write(w) = req else {
                 self.handle_non_flush_request(req)?;
+                self.done_seq.store(seq, Ordering::Relaxed);
                 continue;
             };
 
@@ -114,13 +121,15 @@ impl<T: Types> FlushWorker<T> {
 
             let mut batch = Vec::with_capacity(batch_size);
             batch.push(w);
+            let mut max_seq = seq;
             let mut last_non_flush = None;
 
-            for req in self.rx.try_iter().take(batch_size) {
-                if let WorkerRequest::Write(w) = req {
+            for seq_req in self.rx.try_iter().take(batch_size) {
+                if let WorkerRequest::Write(w) = seq_req.req {
+                    max_seq = max_seq.max(seq_req.seq);
                     batch.push(w);
                 } else {
-                    last_non_flush = Some(req);
+                    last_non_flush = Some(seq_req);
                     break;
                 };
             }
@@ -170,9 +179,16 @@ impl<T: Types> FlushWorker<T> {
             }
 
             // Handle the last non-flush request
-            if let Some(last) = last_non_flush {
+            if let Some(SeqRequest {
+                seq: nf_seq,
+                req: last,
+            }) = last_non_flush
+            {
                 self.handle_non_flush_request(last)?;
+                max_seq = max_seq.max(nf_seq);
             }
+
+            self.done_seq.store(max_seq, Ordering::Relaxed);
         }
     }
 

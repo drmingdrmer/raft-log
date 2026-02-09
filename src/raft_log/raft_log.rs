@@ -460,6 +460,18 @@ impl<T: Types> RaftLog<T> {
         &self.access_stat
     }
 
+    pub fn wait_worker_idle(&self) {
+        self.wal.wait_worker_idle();
+    }
+
+    /// Drain all evictable entries from the payload cache.
+    ///
+    /// Call after `wait_worker_idle()` to normalize the cache to a
+    /// deterministic state. See `PayloadCache::drain_evictable` for details.
+    pub fn drain_cache_evictable(&self) {
+        self.state_machine.payload_cache.write().unwrap().drain_evictable();
+    }
+
     fn get_log_id(&self, index: u64) -> Result<T::LogId, RaftLogStateError<T>> {
         let entry = self
             .state_machine

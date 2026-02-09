@@ -76,6 +76,24 @@ impl<T: Types> PayloadCache<T> {
         }
     }
 
+    /// Evict all entries up to `last_evictable` regardless of cache fullness.
+    ///
+    /// Normally, eviction only triggers during `insert()` when the cache
+    /// exceeds `max_items` or `capacity`. Because `last_evictable` is set by
+    /// the FlushWorker asynchronously, the number of items evicted during
+    /// inserts depends on thread scheduling — making the cache size
+    /// non-deterministic. This method forces a full eviction pass to bring the
+    /// cache to a consistent state independent of timing.
+    pub(crate) fn drain_evictable(&mut self) {
+        while let Some((log_id, _)) = self.cache.first_key_value() {
+            if Some(log_id) <= self.last_evictable.as_ref() {
+                self.evict_first();
+            } else {
+                break;
+            }
+        }
+    }
+
     fn need_evict(&self) -> bool {
         self.cache.len() > self.max_items || self.size > self.capacity
     }
