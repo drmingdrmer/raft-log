@@ -9,8 +9,8 @@ use std::sync::RwLock;
 use std::sync::mpsc::SyncSender;
 
 use codeq::OffsetSize;
-pub(crate) use flush_request::FlushRequest;
 pub(crate) use flush_request::FlushStat;
+pub(crate) use flush_request::WorkerRequest;
 use log::info;
 
 use crate::ChunkId;
@@ -23,7 +23,7 @@ use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::raft_log::wal::flush_request::Flush;
+use crate::raft_log::wal::flush_request::WriteRequest;
 use crate::raft_log::wal::flush_worker::FileEntry;
 use crate::raft_log::wal::flush_worker::FlushWorker;
 use crate::types::Segment;
@@ -43,7 +43,7 @@ where T: Types
     pub(crate) open: OpenChunk<T>,
     pub(crate) closed: BTreeMap<ChunkId, ClosedChunk<T>>,
 
-    flush_tx: SyncSender<FlushRequest<T>>,
+    flush_tx: SyncSender<WorkerRequest<T>>,
 }
 
 impl<T> RaftLogWAL<T>
@@ -97,13 +97,16 @@ where T: Types
     ///
     /// Returns an IO error if the flush request cannot be sent
     pub(crate) fn send_flush(
-        &self,
+        &mut self,
         callback: T::Callback,
     ) -> Result<(), io::Error> {
+        let data = self.open.take_pending_data();
         self.flush_tx
-            .send(FlushRequest::Flush(Flush {
+            .send(WorkerRequest::Write(WriteRequest {
                 upto_offset: self.open.chunk.global_end(),
-                callback,
+                data,
+                sync: true,
+                callback: Some(callback),
             }))
             .map_err(|e| {
                 io::Error::other(format!("Failed to send sync request: {}", e))
@@ -123,7 +126,7 @@ where T: Types
         &self,
         chunk_paths: Vec<String>,
     ) -> Result<(), io::Error> {
-        self.flush_tx.send(FlushRequest::RemoveChunks { chunk_paths }).map_err(
+        self.flush_tx.send(WorkerRequest::RemoveChunks { chunk_paths }).map_err(
             |e| {
                 io::Error::other(format!(
                     "Failed to send remove chunks request: {}",
@@ -150,14 +153,14 @@ where T: Types
         &self,
         callback: SyncSender<Vec<FlushStat>>,
     ) -> Result<(), io::Error> {
-        self.flush_tx.send(FlushRequest::GetFlushStat { tx: callback }).map_err(
-            |e| {
+        self.flush_tx
+            .send(WorkerRequest::GetFlushStat { tx: callback })
+            .map_err(|e| {
                 io::Error::other(format!(
                     "Failed to send get state request: {}",
                     e
                 ))
-            },
-        )
+            })
     }
 
     /// Checks if the current open chunk has reached its capacity.
@@ -204,7 +207,7 @@ where T: Types
 
         let state = get_state();
 
-        let mut new_open = {
+        let new_open = {
             let chunk_id = ChunkId(offset.0);
             OpenChunk::create(
                 config,
@@ -213,9 +216,27 @@ where T: Types
             )?
         };
 
-        std::mem::swap(&mut new_open, &mut self.open);
+        let mut old_open = std::mem::replace(&mut self.open, new_open);
+
+        let prev_pending_data = old_open.take_pending_data();
+        if !prev_pending_data.is_empty() {
+            self.flush_tx
+                .send(WorkerRequest::Write(WriteRequest {
+                    upto_offset: offset.0,
+                    data: prev_pending_data,
+                    sync: true,
+                    callback: None,
+                }))
+                .map_err(|e| {
+                    io::Error::other(format!(
+                        "Failed to send FlushRequest::Write(write-only): {}",
+                        e
+                    ))
+                })?;
+        }
+
         self.flush_tx
-            .send(FlushRequest::AppendFile(FileEntry::new(
+            .send(WorkerRequest::AppendFile(FileEntry::new(
                 offset.0,
                 self.open.chunk.f.clone(),
                 state.last().cloned(),
@@ -227,7 +248,7 @@ where T: Types
                 ))
             })?;
 
-        let chunk = new_open.chunk;
+        let chunk = old_open.chunk;
         let closed_id = chunk.chunk_id();
         let closed = ClosedChunk::new(chunk, state.clone());
         self.closed.insert(closed_id, closed);

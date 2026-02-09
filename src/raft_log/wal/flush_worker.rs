@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs::File;
 use std::io;
+use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -13,8 +14,8 @@ use crate::ChunkId;
 use crate::Types;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::wal::callback::Callback;
-use crate::raft_log::wal::flush_request::FlushRequest;
 use crate::raft_log::wal::flush_request::FlushStat;
+use crate::raft_log::wal::flush_request::WorkerRequest;
 
 pub(crate) struct FileEntry<T: Types> {
     pub(crate) starting_offset: u64,
@@ -59,7 +60,7 @@ impl<T: Types> FileEntry<T> {
 }
 
 pub(crate) struct FlushWorker<T: Types> {
-    rx: Receiver<FlushRequest<T>>,
+    rx: Receiver<WorkerRequest<T>>,
     files: Vec<FileEntry<T>>,
     cache: Arc<RwLock<PayloadCache<T>>>,
 }
@@ -76,7 +77,7 @@ impl<T: Types> FlushWorker<T> {
     }
 
     pub(crate) fn new(
-        rx: Receiver<FlushRequest<T>>,
+        rx: Receiver<WorkerRequest<T>>,
         file_entry: FileEntry<T>,
         cache: Arc<RwLock<PayloadCache<T>>>,
     ) -> Self {
@@ -102,52 +103,69 @@ impl<T: Types> FlushWorker<T> {
                 return Ok(());
             };
 
-            let FlushRequest::Flush(flush) = req else {
+            let WorkerRequest::Write(w) = req else {
                 self.handle_non_flush_request(req)?;
                 continue;
             };
 
-            // Flush request should be batched to maximize throughput.
+            // Write requests should be batched to maximize throughput.
 
             let batch_size = 1024;
 
             let mut batch = Vec::with_capacity(batch_size);
-            batch.push(flush);
+            batch.push(w);
             let mut last_non_flush = None;
 
             for req in self.rx.try_iter().take(batch_size) {
-                if let FlushRequest::Flush(f) = req {
-                    batch.push(f);
+                if let WorkerRequest::Write(w) = req {
+                    batch.push(w);
                 } else {
                     last_non_flush = Some(req);
                     break;
                 };
             }
 
-            debug!("batched flush: {}", batch.len());
+            debug!("batched write: {}", batch.len());
 
             {
-                let last_flush = batch.last().unwrap();
-                let res = self.sync_all_files(last_flush.upto_offset);
+                // TODO: possible to use write_all_vectored()?
 
-                match res {
-                    Ok(_) => {
-                        for x in batch {
-                            x.callback.send(Ok(()));
-                        }
+                let mut last_file: &File = &self.files.last().unwrap().f;
+                for w in &batch {
+                    if !w.data.is_empty() {
+                        last_file.write_all(&w.data)?;
                     }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to flush upto offset {}: {}",
-                            last_flush.upto_offset,
-                            e
-                        );
+                }
 
-                        for x in batch {
-                            x.callback.send(Err(io::Error::new(
-                                e.kind(),
-                                e.to_string(),
-                            )));
+                let need_sync = batch.iter().any(|w| w.sync);
+
+                if need_sync {
+                    let upto_offset = batch.last().unwrap().upto_offset;
+                    let res = self.sync_all_files(upto_offset);
+
+                    match res {
+                        Ok(_) => {
+                            for w in batch {
+                                if let Some(cb) = w.callback {
+                                    cb.send(Ok(()));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to flush upto offset {}: {}",
+                                upto_offset,
+                                e
+                            );
+
+                            for w in batch {
+                                if let Some(cb) = w.callback {
+                                    cb.send(Err(io::Error::new(
+                                        e.kind(),
+                                        e.to_string(),
+                                    )));
+                                }
+                            }
                         }
                     }
                 }
@@ -162,17 +180,17 @@ impl<T: Types> FlushWorker<T> {
 
     fn handle_non_flush_request(
         &mut self,
-        req: FlushRequest<T>,
+        req: WorkerRequest<T>,
     ) -> Result<(), io::Error> {
         match req {
-            FlushRequest::AppendFile(file_entry) => {
+            WorkerRequest::AppendFile(file_entry) => {
                 info!("FlushWorker: AppendFile: {}", file_entry);
                 self.files.push(file_entry);
             }
-            FlushRequest::Flush(_) => {
-                unreachable!("Flush request should be handled in run()");
+            WorkerRequest::Write(_) => {
+                unreachable!("Write request should be handled in run()");
             }
-            FlushRequest::GetFlushStat { tx } => {
+            WorkerRequest::GetFlushStat { tx } => {
                 let stat = self
                     .files
                     .iter()
@@ -184,7 +202,7 @@ impl<T: Types> FlushWorker<T> {
                     .collect();
                 let _ = tx.send(stat);
             }
-            FlushRequest::RemoveChunks { chunk_paths } => {
+            WorkerRequest::RemoveChunks { chunk_paths } => {
                 info!("FlushWorker: RemoveChunks: {:?}", chunk_paths);
                 for path in chunk_paths {
                     std::fs::remove_file(path)?;

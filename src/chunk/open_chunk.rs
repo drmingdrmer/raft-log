@@ -14,7 +14,7 @@ use crate::types::Segment;
 
 #[derive(Debug)]
 pub(crate) struct OpenChunk<T: Types> {
-    record_write_buf: Vec<u8>,
+    pending_data: Vec<u8>,
     pub(crate) chunk: Chunk<T>,
 }
 
@@ -24,7 +24,7 @@ where T: Types
     /// Creates a new open chunk from an existing chunk.
     pub(crate) fn new(chunk: Chunk<T>) -> Self {
         Self {
-            record_write_buf: Vec::new(),
+            pending_data: Vec::new(),
             chunk,
         }
     }
@@ -51,11 +51,13 @@ where T: Types
         };
 
         let mut open = Self {
-            record_write_buf: Vec::new(),
+            pending_data: Vec::new(),
             chunk,
         };
 
         open.append_record(&initial_record)?;
+        open.chunk.f.write_all(&open.pending_data)?;
+        open.pending_data.clear();
 
         Ok(open)
     }
@@ -64,13 +66,14 @@ where T: Types
         &mut self,
         rec: &WALRecord<T>,
     ) -> Result<Segment, io::Error> {
-        self.record_write_buf.clear();
-        let size = rec.encode(&mut self.record_write_buf)?;
-
-        self.chunk.f.write_all(&self.record_write_buf)?;
+        let size = rec.encode(&mut self.pending_data)?;
 
         self.chunk.append_record_size(size as u64);
 
         Ok(self.chunk.last_segment())
+    }
+
+    pub(crate) fn take_pending_data(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pending_data)
     }
 }

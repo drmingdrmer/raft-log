@@ -3,13 +3,11 @@ use std::sync::mpsc::SyncSender;
 use crate::Types;
 use crate::raft_log::wal::flush_worker::FileEntry;
 
-pub(crate) struct Flush<T: Types> {
-    /// fdatasync the data in WAL at least upto this offset, inclusive.
-    /// This is filled with current global offset when this fdatasync is
-    /// called.
+pub(crate) struct WriteRequest<T: Types> {
     pub(crate) upto_offset: u64,
-
-    pub(crate) callback: T::Callback,
+    pub(crate) data: Vec<u8>,
+    pub(crate) sync: bool,
+    pub(crate) callback: Option<T::Callback>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +25,7 @@ impl FlushStat {
     }
 }
 
-pub(crate) enum FlushRequest<T: Types> {
+pub(crate) enum WorkerRequest<T: Types> {
     /// Append a new file that will be need to be sync.
     AppendFile(FileEntry<T>),
 
@@ -37,8 +35,8 @@ pub(crate) enum FlushRequest<T: Types> {
     /// corresponding purge record is flushed.
     RemoveChunks { chunk_paths: Vec<String> },
 
-    /// Sync all files in order.
-    Flush(Flush<T>),
+    /// Write data, and optionally sync all files.
+    Write(WriteRequest<T>),
 
     /// For debug, return a list of offset and sync id of all files.
     #[allow(dead_code)]

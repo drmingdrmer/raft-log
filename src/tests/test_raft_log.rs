@@ -31,6 +31,8 @@ fn test_save_user_data() -> Result<(), io::Error> {
     let state = rl.log_state();
     assert_eq!(None, state.user_data);
 
+    blocking_flush(&mut rl)?;
+
     let want_dumped = indoc! {r#"
 RaftLog:
 ChunkId(00_000_000_000_000_000_000)
@@ -482,6 +484,8 @@ fn test_read_with_cache() -> Result<(), io::Error> {
             rl.access_stat().to_string(),
             "last insert evicts item"
         );
+
+        blocking_flush(&mut rl)?;
     }
 
     // Re-open
@@ -551,6 +555,8 @@ fn test_read_without_cache() -> Result<(), io::Error> {
             rl.access_stat().to_string(),
             "logs in open chunk are always cached"
         );
+
+        blocking_flush(&mut rl)?;
     }
 
     // Re-open
@@ -678,9 +684,9 @@ fn test_sync() -> Result<(), io::Error> {
         let flush_stat: Vec<(u64, u64)> =
             rl.wal.get_stat()?.iter().map(FlushStat::offset_sync_id).collect();
         assert_eq!(
-            vec![(0, 0,), (161, 0,), (324, 0,), (509, 0)],
+            vec![(324, 509), (509, 0)],
             flush_stat,
-            "no synced"
+            "chunk rotations synced old files; current chunk not yet synced"
         );
 
         blocking_flush(&mut rl)?;
