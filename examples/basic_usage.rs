@@ -88,7 +88,7 @@ fn main() -> io::Result<()> {
         let (tx, rx) = sync_channel(1);
 
         // Flush changes to disk
-        raft_log.flush(tx)?;
+        raft_log.flush(Some(tx))?;
 
         // Wait for flush to complete
         rx.recv().unwrap()?;

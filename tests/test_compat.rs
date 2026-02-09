@@ -189,7 +189,7 @@ fn create_raft_log(base_dir: &str) -> Result<(), io::Error> {
 
     // Flush the entries to the disk.
     let (tx, rx) = sync_channel(1);
-    raft_log.flush(tx)?;
+    raft_log.flush(Some(tx))?;
     rx.recv().unwrap()?;
 
     // Replace the dump generation with new function call

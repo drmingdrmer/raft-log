@@ -112,14 +112,12 @@ pub trait RaftLogWriter<T: Types> {
 
     /// Initiate an asynchronous flush operation to persist all written data.
     ///
-    /// This method ensures all previously written data is durably stored on
-    /// disk. The provided callback will be invoked when the flush operation
-    /// completes, indicating success or failure.
-    ///
-    /// This should be called after any operation that requires immediate
-    /// durability, such as responding to client requests or voting in
-    /// elections.
-    fn flush(&mut self, callback: T::Callback) -> Result<(), io::Error>;
+    /// All pending data is durably synced (fsync) to disk regardless of the
+    /// callback. When `callback` is `Some`, it is invoked on completion to
+    /// notify the caller. When `None`, data is still synced but no
+    /// notification is sent.
+    fn flush(&mut self, callback: Option<T::Callback>)
+    -> Result<(), io::Error>;
 }
 
 /// Synchronously flush all written data to persistent storage.
@@ -127,7 +125,7 @@ pub trait RaftLogWriter<T: Types> {
 pub(crate) fn blocking_flush<T>(rl: &mut RaftLog<T>) -> Result<(), io::Error>
 where T: Types<Callback = SyncSender<Result<(), io::Error>>> {
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    rl.flush(tx)?;
+    rl.flush(Some(tx))?;
     rx.recv().map_err(|_e| {
         io::Error::other("Failed to receive flush completion")
     })??;

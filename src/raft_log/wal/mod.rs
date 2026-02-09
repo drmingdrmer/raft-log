@@ -129,14 +129,14 @@ where T: Types
 
     pub(crate) fn send_flush(
         &mut self,
-        callback: T::Callback,
+        callback: Option<T::Callback>,
     ) -> Result<(), io::Error> {
         let data = self.open.take_pending_data();
         self.send_request(WorkerRequest::Write(WriteRequest {
             upto_offset: self.open.chunk.global_end(),
             data,
             sync: true,
-            callback: Some(callback),
+            callback,
         }))
     }
 

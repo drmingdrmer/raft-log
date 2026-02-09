@@ -164,16 +164,16 @@ impl<T: Types> FlushWorker<T> {
                             e
                         );
                     }
-                    Some(res)
+                    res
                 } else {
-                    None
+                    Ok(())
                 };
 
                 for w in batch {
                     if let Some(cb) = w.callback {
                         match &sync_result {
-                            None | Some(Ok(())) => cb.send(Ok(())),
-                            Some(Err(e)) => {
+                            Ok(()) => cb.send(Ok(())),
+                            Err(e) => {
                                 cb.send(Err(io::Error::new(
                                     e.kind(),
                                     e.to_string(),

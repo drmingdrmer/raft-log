@@ -143,7 +143,10 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         self.append_and_apply(&record)
     }
 
-    fn flush(&mut self, callback: T::Callback) -> Result<(), io::Error> {
+    fn flush(
+        &mut self,
+        callback: Option<T::Callback>,
+    ) -> Result<(), io::Error> {
         self.wal.send_flush(callback)?;
 
         if !self.removed_chunks.is_empty() {
