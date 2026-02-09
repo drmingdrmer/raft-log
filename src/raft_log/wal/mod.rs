@@ -47,7 +47,12 @@ where T: Types
     pub(crate) closed: BTreeMap<ChunkId, ClosedChunk<T>>,
 
     flush_tx: SyncSender<SeqRequest<T>>,
+
+    /// The next sequence number to assign. Incremented on each `send_request`.
+    /// Only accessed by the main thread, so a plain `u64` suffices.
     sent_seq: u64,
+
+    /// Shared with `FlushWorker`; stores the highest completed seq.
     done_seq: Arc<AtomicU64>,
 }
 
@@ -96,15 +101,8 @@ where T: Types
         }
     }
 
-    /// Sends a flush request to ensure data is persisted to disk.
-    ///
-    /// # Arguments
-    ///
-    /// * `callback` - Callback to be executed after the flush completes
-    ///
-    /// # Errors
-    ///
-    /// Returns an IO error if the flush request cannot be sent
+    /// Wraps a `WorkerRequest` with an auto-incrementing seq and sends it to
+    /// the FlushWorker.
     fn send_request(&mut self, req: WorkerRequest<T>) -> Result<(), io::Error> {
         self.sent_seq += 1;
         self.flush_tx
@@ -117,6 +115,12 @@ where T: Types
             })
     }
 
+    /// Block until the FlushWorker has processed all requests sent so far.
+    ///
+    /// Polls `done_seq` in a 1 ms sleep loop until it reaches `sent_seq`.
+    /// This does NOT normalize the payload cache — call
+    /// `RaftLog::drain_cache_evictable()` afterwards if a deterministic cache
+    /// state is needed.
     pub(crate) fn wait_worker_idle(&self) {
         while self.done_seq.load(Ordering::Relaxed) < self.sent_seq {
             std::thread::sleep(std::time::Duration::from_millis(1));

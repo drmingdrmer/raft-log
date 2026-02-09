@@ -460,6 +460,12 @@ impl<T: Types> RaftLog<T> {
         &self.access_stat
     }
 
+    /// Block until the FlushWorker has processed all queued requests.
+    ///
+    /// After this returns, all file writes, syncs, and cache eviction boundary
+    /// updates issued before this call are complete. Note that the payload
+    /// cache item count may still be non-deterministic because eviction is
+    /// lazy; call `drain_cache_evictable()` afterwards to normalize it.
     pub fn wait_worker_idle(&self) {
         self.wal.wait_worker_idle();
     }

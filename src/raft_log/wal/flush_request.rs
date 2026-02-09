@@ -3,6 +3,12 @@ use std::sync::mpsc::SyncSender;
 use crate::Types;
 use crate::raft_log::wal::flush_worker::FileEntry;
 
+/// A `WorkerRequest` tagged with a monotonically increasing sequence number.
+///
+/// The main thread assigns an incrementing `seq` to every request it sends.
+/// After processing a request, the FlushWorker stores the highest completed
+/// seq into a shared `AtomicU64`, allowing the main thread to wait until all
+/// sent requests have been processed.
 pub(crate) struct SeqRequest<T: Types> {
     pub(crate) seq: u64,
     pub(crate) req: WorkerRequest<T>,

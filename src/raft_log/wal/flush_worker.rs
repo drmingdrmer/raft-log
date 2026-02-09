@@ -66,6 +66,12 @@ pub(crate) struct FlushWorker<T: Types> {
     rx: Receiver<SeqRequest<T>>,
     files: Vec<FileEntry<T>>,
     cache: Arc<RwLock<PayloadCache<T>>>,
+    /// The highest completed request sequence number.
+    ///
+    /// Updated (with `Relaxed` ordering) after processing each request or
+    /// batch. The main thread polls this to implement `wait_worker_idle()`.
+    /// `Relaxed` is sufficient because the actual data synchronization is
+    /// provided by the `RwLock` on `PayloadCache`.
     done_seq: Arc<AtomicU64>,
 }
 
