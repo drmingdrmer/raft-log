@@ -127,15 +127,23 @@ where T: Types
         }
     }
 
-    pub(crate) fn send_flush(
+    /// Hand the pending data buffer to the worker for writing.
+    ///
+    /// Drains `OpenChunk::pending_data` and packages it as a `WriteRequest`.
+    /// The worker always writes the bytes to the OS file. When `sync` is
+    /// `true` it also calls `fsync` so the data is on stable storage; when
+    /// `sync` is `false` it skips the fsync and durability is deferred to
+    /// the next sync write that lands in the same or a later batch.
+    pub(crate) fn send_pending(
         &mut self,
+        sync: bool,
         callback: Option<T::Callback>,
     ) -> Result<(), io::Error> {
         let data = self.open.take_pending_data();
         self.send_request(WorkerRequest::Write(WriteRequest {
             upto_offset: self.open.chunk.global_end(),
             data,
-            sync: true,
+            sync,
             callback,
         }))
     }

@@ -70,7 +70,7 @@ fn test_bench_raft_log() -> Result<(), io::Error> {
     for index in 0..n {
         rl.append([((1, index), "foo".to_string())])?;
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        rl.flush(Some(tx))?;
+        rl.flush(true, Some(tx))?;
 
         rx.recv().unwrap()?;
 

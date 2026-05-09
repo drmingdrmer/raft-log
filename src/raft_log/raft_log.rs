@@ -145,11 +145,14 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
 
     fn flush(
         &mut self,
+        sync: bool,
         callback: Option<T::Callback>,
     ) -> Result<(), io::Error> {
-        self.wal.send_flush(callback)?;
+        self.wal.send_pending(sync, callback)?;
 
-        if !self.removed_chunks.is_empty() {
+        // Chunk removal must be sequenced after the corresponding purge
+        // record is fsynced; the no-sync path leaves the queue alone.
+        if sync && !self.removed_chunks.is_empty() {
             let chunk_ids = self.removed_chunks.drain(..).collect::<Vec<_>>();
             self.wal.send_remove_chunks(chunk_ids)?;
         }

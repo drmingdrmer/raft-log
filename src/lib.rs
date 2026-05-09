@@ -72,7 +72,7 @@
 //!
 //! // Flush changes to disk with callback
 //! let (tx, rx) = sync_channel(1);
-//! raft_log.flush(Some(tx)).unwrap();
+//! raft_log.flush(true, Some(tx)).unwrap();
 //! rx.recv().unwrap().unwrap();
 //! ```
 

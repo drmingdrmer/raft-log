@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::mpsc::sync_channel;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -883,6 +884,73 @@ fn test_flush_worker_tracks_new_chunk_file_after_rotation()
         stat[0].ino, stat[1].ino,
         "FlushWorker should track two different files, got same inode {}",
         stat[0].ino
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_flush_without_sync() -> Result<(), io::Error> {
+    // flush(false, _) should hand pending data to the worker (so it reaches
+    // the OS file) but must not trigger an fsync; sync_id stays put.
+    let ctx = TestContext::new()?;
+    let mut rl = ctx.new_raft_log()?;
+
+    rl.append([((1, 0), ss("hello")), ((1, 1), ss("world"))])?;
+
+    let (tx, rx) = sync_channel::<Result<(), io::Error>>(1);
+    rl.flush(false, Some(tx))?;
+    rx.recv().map_err(|e| io::Error::other(format!("callback: {e}")))??;
+
+    let before: Vec<(u64, u64)> =
+        rl.wal.get_stat()?.iter().map(FlushStat::offset_sync_id).collect();
+    assert!(
+        before.iter().all(|(_, sync_id)| *sync_id == 0),
+        "sync_id must stay 0 after flush(false, _), got {:?}",
+        before
+    );
+
+    // Now a sync flush — sync_id should advance to the write head.
+    blocking_flush(&mut rl)?;
+
+    let after: Vec<(u64, u64)> =
+        rl.wal.get_stat()?.iter().map(FlushStat::offset_sync_id).collect();
+    assert!(
+        after.iter().any(|(_, sync_id)| *sync_id > 0),
+        "sync_id must advance after flush(true, _), got {:?}",
+        after
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_flush_without_sync_data_visible_after_reopen() -> Result<(), io::Error>
+{
+    // Data submitted via flush(false, _) reaches the OS file (kernel page
+    // cache), so a fresh RaftLog opened on the same chunk path should see
+    // the appended entries even though no fsync was ever issued.
+    let ctx = TestContext::new()?;
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        rl.append([((1, 0), ss("alpha")), ((1, 1), ss("beta"))])?;
+
+        let (tx, rx) = sync_channel::<Result<(), io::Error>>(1);
+        rl.flush(false, Some(tx))?;
+        rx.recv().map_err(|e| io::Error::other(format!("callback: {e}")))??;
+        // rl drops here without ever calling flush(true, _) — only the
+        // no-sync path has touched disk.
+    }
+
+    let rl = ctx.new_raft_log()?;
+    let entries = rl.read(0, 1000).collect::<Result<Vec<_>, io::Error>>()?;
+    let payloads: Vec<_> =
+        entries.iter().map(|(_, payload)| payload.clone()).collect();
+    assert_eq!(
+        vec![ss("alpha"), ss("beta")],
+        payloads,
+        "appended entries should be readable after reopen"
     );
 
     Ok(())

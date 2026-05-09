@@ -110,14 +110,31 @@ pub trait RaftLogWriter<T: Types> {
     /// Returns a Segment representing the written data region.
     fn commit(&mut self, log_id: T::LogId) -> Result<Segment, io::Error>;
 
-    /// Initiate an asynchronous flush operation to persist all written data.
+    /// Initiate an asynchronous flush operation.
     ///
-    /// All pending data is durably synced (fsync) to disk regardless of the
-    /// callback. When `callback` is `Some`, it is invoked on completion to
-    /// notify the caller. When `None`, data is still synced but no
-    /// notification is sent.
-    fn flush(&mut self, callback: Option<T::Callback>)
-    -> Result<(), io::Error>;
+    /// Pending data is handed to the worker, which writes it to the OS file
+    /// (kernel page cache). When `sync` is `true`, the worker also calls
+    /// `fsync` so the data is on stable storage; when `sync` is `false`, the
+    /// fsync is skipped and durability is deferred to the next sync flush.
+    /// When `callback` is `Some`, it is invoked after the (optional) fsync
+    /// completes; when `None`, no notification is sent.
+    ///
+    /// Choose `sync = false` when:
+    /// - the record carries best-effort durability (e.g. the committed log id
+    ///   in `save_committed`), so paying an fsync per call is wasteful;
+    /// - the next durable operation (typically `flush(true, _)` for an
+    ///   `append`) will fsync this record along with its own batch — the worker
+    ///   promotes a no-sync write to a sync write whenever it batches alongside
+    ///   any `sync = true` request.
+    ///
+    /// Note: only `flush(true, _)` triggers pending chunk removals. Chunk
+    /// removal must follow the corresponding purge record's fsync, so the
+    /// no-sync path leaves the queue alone.
+    fn flush(
+        &mut self,
+        sync: bool,
+        callback: Option<T::Callback>,
+    ) -> Result<(), io::Error>;
 }
 
 /// Synchronously flush all written data to persistent storage.
@@ -125,7 +142,7 @@ pub trait RaftLogWriter<T: Types> {
 pub(crate) fn blocking_flush<T>(rl: &mut RaftLog<T>) -> Result<(), io::Error>
 where T: Types<Callback = SyncSender<Result<(), io::Error>>> {
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    rl.flush(Some(tx))?;
+    rl.flush(true, Some(tx))?;
     rx.recv().map_err(|_e| {
         io::Error::other("Failed to receive flush completion")
     })??;

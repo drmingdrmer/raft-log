@@ -115,7 +115,7 @@ fn test_massive_load() -> std::io::Result<()> {
         writeln!(file, "sync start: {:#}", stat)?;
 
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        log.flush(Some(tx))?;
+        log.flush(true, Some(tx))?;
         rx.recv().unwrap()?;
 
         let stat = log.stat();
