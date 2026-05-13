@@ -104,6 +104,7 @@ where T: Types
             done_seq.clone(),
             flush_metrics.clone(),
             config.flush_batch_wait(),
+            config.flush_batch_max_items(),
         );
 
         worker.spawn();

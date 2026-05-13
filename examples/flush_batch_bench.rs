@@ -62,12 +62,14 @@ struct Options {
     operations: usize,
     payload_bytes: usize,
     wait_us: Vec<u64>,
+    batch_sizes: Vec<usize>,
     output: PathBuf,
 }
 
 struct CaseResult {
     name: String,
     wait: Duration,
+    batch_size: usize,
     operations: usize,
     payload_bytes: usize,
     elapsed: Duration,
@@ -79,16 +81,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = Options::parse()?;
 
     let mut results = Vec::new();
-    for wait_us in &options.wait_us {
-        let wait = Duration::from_micros(*wait_us);
-        let name = format!("wait_{}us", wait_us);
-        println!("running {name}");
-        results.push(run_case(
-            name,
-            wait,
-            options.operations,
-            options.payload_bytes,
-        )?);
+    for batch_size in &options.batch_sizes {
+        for wait_us in &options.wait_us {
+            let wait = Duration::from_micros(*wait_us);
+            let name = format!("wait_{}us_batch_{}", wait_us, batch_size);
+            println!("running {name}");
+            results.push(run_case(
+                name,
+                wait,
+                *batch_size,
+                options.operations,
+                options.payload_bytes,
+            )?);
+        }
     }
 
     let report = render_report(&options, &results);
@@ -109,6 +114,7 @@ impl Options {
         let mut operations = 2048;
         let mut payload_bytes = 256;
         let mut wait_us = vec![0, 100, 1000, 2000, 5000];
+        let mut batch_sizes = vec![1024];
         let mut output = PathBuf::from("target/flush_batch_bench_report.md");
 
         let args = env::args().skip(1).collect::<Vec<_>>();
@@ -132,6 +138,19 @@ impl Options {
                         .map(str::parse::<u64>)
                         .collect::<Result<Vec<_>, _>>()?;
                 }
+                "--batch-size" | "--batch-sizes" => {
+                    i += 1;
+                    let raw = args
+                        .get(i)
+                        .ok_or_else(|| missing_arg("--batch-size"))?;
+                    batch_sizes = raw
+                        .split(',')
+                        .map(str::parse::<usize>)
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .map(|v| v.max(1))
+                        .collect();
+                }
                 "--output" => {
                     i += 1;
                     output = args
@@ -143,7 +162,8 @@ impl Options {
                     println!(
                         "usage: cargo run --release --example flush_batch_bench -- \
                          [--operations N] [--payload-bytes N] \
-                         [--wait-us 0,100,1000,5000] [--output PATH]"
+                         [--wait-us 0,100,1000,2000,5000] \
+                         [--batch-size 512,1024,2048] [--output PATH]"
                     );
                     std::process::exit(0);
                 }
@@ -158,6 +178,7 @@ impl Options {
             operations,
             payload_bytes,
             wait_us,
+            batch_sizes,
             output,
         })
     }
@@ -185,6 +206,7 @@ fn missing_arg(name: &str) -> Box<dyn std::error::Error> {
 fn run_case(
     name: String,
     wait: Duration,
+    batch_size: usize,
     operations: usize,
     payload_bytes: usize,
 ) -> Result<CaseResult, Box<dyn std::error::Error>> {
@@ -196,6 +218,7 @@ fn run_case(
         chunk_max_records: Some(1024 * 1024),
         chunk_max_size: Some(1024 * 1024 * 1024),
         flush_batch_wait: Some(wait),
+        flush_batch_max_items: Some(batch_size),
         ..Default::default()
     });
 
@@ -242,6 +265,7 @@ fn run_case(
     Ok(CaseResult {
         name,
         wait,
+        batch_size,
         operations,
         payload_bytes,
         elapsed,
@@ -268,7 +292,8 @@ fn render_report(options: &Options, results: &[CaseResult]) -> String {
     report
         .push_str(&format!("- Operations per case: {}\n", options.operations));
     report.push_str(&format!("- Payload bytes: {}\n", options.payload_bytes));
-    report.push_str(&format!("- Wait windows: {:?} us\n\n", options.wait_us));
+    report.push_str(&format!("- Wait windows: {:?} us\n", options.wait_us));
+    report.push_str(&format!("- Batch sizes: {:?}\n\n", options.batch_sizes));
 
     report.push_str("## Methodology\n\n");
     report.push_str("- Each case opens a fresh temporary RaftLog directory.\n");
@@ -284,10 +309,10 @@ fn render_report(options: &Options, results: &[CaseResult]) -> String {
 
     report.push_str("## Summary\n\n");
     report.push_str(
-        "| case | wait | elapsed ms | qps | avg us | p50 us | p90 us | p99 us | max us | batches | sync batches | writes/batch | max batch | sync avg us | sync max us | group avg us | group max us |\n",
+        "| case | wait | configured batch | elapsed ms | qps | avg us | p50 us | p90 us | p99 us | max us | batches | sync batches | writes/batch | max batch | sync avg us | sync max us | group avg us | group max us |\n",
     );
     report.push_str(
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
     );
 
     for result in results {
@@ -303,9 +328,10 @@ fn render_report(options: &Options, results: &[CaseResult]) -> String {
             divide(metrics.group_wait_us, metrics.group_wait_count);
 
         report.push_str(&format!(
-            "| {} | {} | {:.2} | {:.0} | {:.0} | {} | {} | {} | {} | {} | {} | {:.2} | {} | {:.2} | {} | {:.2} | {} |\n",
+            "| {} | {} | {} | {:.2} | {:.0} | {:.0} | {} | {} | {} | {} | {} | {} | {:.2} | {} | {:.2} | {} | {:.2} | {} |\n",
             result.name,
             format_duration(result.wait),
+            result.batch_size,
             duration_ms(result.elapsed),
             qps,
             avg_us,
@@ -327,6 +353,8 @@ fn render_report(options: &Options, results: &[CaseResult]) -> String {
     for result in results {
         report.push_str(&format!("\n## {}\n\n", result.name));
         report.push_str(&format!("- wait: {}\n", format_duration(result.wait)));
+        report
+            .push_str(&format!("- configured batch: {}\n", result.batch_size));
         report.push_str(&format!("- operations: {}\n", result.operations));
         report
             .push_str(&format!("- payload bytes: {}\n", result.payload_bytes));

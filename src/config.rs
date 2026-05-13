@@ -6,6 +6,7 @@ use crate::errors::InvalidChunkFileName;
 use crate::num;
 
 const DEFAULT_FLUSH_BATCH_WAIT: Duration = Duration::from_millis(1);
+const DEFAULT_FLUSH_BATCH_MAX_ITEMS: usize = 2048;
 
 /// Configuration for Raft-log.
 ///
@@ -45,6 +46,11 @@ pub struct Config {
     ///
     /// Defaults to 1 millisecond.
     pub flush_batch_wait: Option<Duration>,
+
+    /// Maximum number of write requests to include in one flush batch.
+    ///
+    /// Defaults to 2048. Values smaller than 1 are treated as 1.
+    pub flush_batch_max_items: Option<usize>,
 }
 
 impl Config {
@@ -75,6 +81,7 @@ impl Config {
             chunk_max_size,
             truncate_incomplete_record: None,
             flush_batch_wait: None,
+            flush_batch_max_items: None,
         }
     }
 
@@ -111,6 +118,13 @@ impl Config {
     /// Returns the bounded wait before syncing a flush batch.
     pub fn flush_batch_wait(&self) -> Duration {
         self.flush_batch_wait.unwrap_or(DEFAULT_FLUSH_BATCH_WAIT)
+    }
+
+    /// Returns the maximum number of write requests in one flush batch.
+    pub fn flush_batch_max_items(&self) -> usize {
+        self.flush_batch_max_items
+            .unwrap_or(DEFAULT_FLUSH_BATCH_MAX_ITEMS)
+            .max(1)
     }
 
     /// Returns the full path for a given chunk ID

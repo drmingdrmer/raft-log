@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs::File;
 use std::io;
+use std::io::IoSlice;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
@@ -113,6 +114,7 @@ pub(crate) struct FlushWorker<T: Types> {
     cache: Arc<RwLock<PayloadCache<T>>>,
     metrics: Arc<AtomicFlushMetrics>,
     flush_batch_wait: Duration,
+    flush_batch_max_items: usize,
     /// The highest completed request sequence number.
     ///
     /// Updated (with `Relaxed` ordering) after processing each request or
@@ -140,6 +142,7 @@ impl<T: Types> FlushWorker<T> {
         done_seq: Arc<AtomicU64>,
         metrics: Arc<AtomicFlushMetrics>,
         flush_batch_wait: Duration,
+        flush_batch_max_items: usize,
     ) -> Self {
         Self {
             rx,
@@ -147,6 +150,7 @@ impl<T: Types> FlushWorker<T> {
             cache,
             metrics,
             flush_batch_wait,
+            flush_batch_max_items,
             done_seq,
         }
     }
@@ -161,8 +165,7 @@ impl<T: Types> FlushWorker<T> {
     fn run_inner(mut self) -> Result<(), io::Error> {
         loop {
             // Write requests should be batched to maximize throughput.
-            let batch_size = 1024;
-            let mut batch = WriteBatch::new(batch_size);
+            let mut batch = WriteBatch::new(self.flush_batch_max_items);
 
             let req = self.rx.recv();
             let Ok(seq_req) = req else {
@@ -197,11 +200,7 @@ impl<T: Types> FlushWorker<T> {
                 }
 
                 let write_start = Instant::now();
-                for w in &batch.writes {
-                    if !w.write.data.is_empty() {
-                        last_file.write_all(&w.write.data)?;
-                    }
-                }
+                write_batch_vectored(&mut last_file, &batch.writes)?;
                 batch_metrics.record_write_time(write_start);
 
                 let need_sync = batch.writes.iter().any(|w| w.write.sync);
@@ -356,4 +355,67 @@ impl<T: Types> FlushWorker<T> {
 
         Ok(())
     }
+}
+
+fn write_batch_vectored<T: Types>(
+    file: &mut &File,
+    writes: &[QueuedWrite<T>],
+) -> Result<(), io::Error> {
+    const MAX_VECTORED_WRITE_SLICES: usize = 1024;
+
+    for chunk in writes.chunks(MAX_VECTORED_WRITE_SLICES) {
+        let mut slices = chunk
+            .iter()
+            .filter(|w| !w.write.data.is_empty())
+            .map(|w| w.write.data.as_slice())
+            .collect::<Vec<_>>();
+
+        if !slices.is_empty() {
+            write_all_vectored(file, &mut slices)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_all_vectored(
+    file: &mut &File,
+    buffers: &mut [&[u8]],
+) -> Result<(), io::Error> {
+    let mut start = 0;
+
+    while start < buffers.len() {
+        let io_slices = buffers[start..]
+            .iter()
+            .map(|buffer| IoSlice::new(buffer))
+            .collect::<Vec<_>>();
+
+        let mut written = match file.write_vectored(&io_slices) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "failed to write whole buffer",
+                ));
+            }
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+
+        while written > 0 {
+            let len = buffers[start].len();
+            if written < len {
+                buffers[start] = &buffers[start][written..];
+                break;
+            }
+
+            written -= len;
+            start += 1;
+            if start == buffers.len() {
+                break;
+            }
+        }
+    }
+
+    Ok(())
 }
