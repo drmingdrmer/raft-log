@@ -209,7 +209,7 @@ impl<T: Types> FlushWorker<T> {
                     let upto_offset =
                         batch.writes.last().unwrap().write.upto_offset;
                     let sync_start = Instant::now();
-                    let res = self.sync_all_files(upto_offset);
+                    let res = self.sync_data_files(upto_offset);
                     batch_metrics.record_sync_time(sync_start);
                     if let Err(ref e) = res {
                         log::error!(
@@ -328,13 +328,16 @@ impl<T: Types> FlushWorker<T> {
         Ok(())
     }
 
-    pub fn sync_all_files(&mut self, offset: u64) -> Result<(), io::Error> {
+    pub fn sync_data_files(&mut self, offset: u64) -> Result<(), io::Error> {
         let files = &mut self.files;
 
         if files.is_empty() {
             return Ok(());
         }
 
+        // Append-only WAL flushes only need file data durability. Metadata
+        // changes such as recovery truncation are synchronized at the call
+        // site that performs the metadata update.
         while files.len() > 1 {
             let f = files.remove(0);
             f.f.sync_data()?;

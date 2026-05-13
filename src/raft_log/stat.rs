@@ -120,6 +120,24 @@ pub struct FlushMetrics {
     pub last_sync_us: u64,
     /// Request queue wait maximum of the latest batch, in microseconds.
     pub last_queued_wait_max_us: u64,
+    /// Intentional group-commit wait latency percentiles, in microseconds.
+    pub group_wait_percentiles: FlushLatencyPercentiles,
+    /// Per-batch max request queue wait latency percentiles, in microseconds.
+    pub queued_wait_percentiles: FlushLatencyPercentiles,
+    /// File write latency percentiles, in microseconds.
+    pub write_percentiles: FlushLatencyPercentiles,
+    /// Filesystem sync latency percentiles, in microseconds.
+    pub sync_percentiles: FlushLatencyPercentiles,
+    /// Whole batch processing latency percentiles, in microseconds.
+    pub batch_percentiles: FlushLatencyPercentiles,
+}
+
+/// Percentiles for one flush worker latency dimension.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FlushLatencyPercentiles {
+    pub p50_us: u64,
+    pub p90_us: u64,
+    pub p99_us: u64,
 }
 
 /// Statistics about a single chunk in the Raft log

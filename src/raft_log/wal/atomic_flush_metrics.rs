@@ -1,8 +1,66 @@
+use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
+use base2histogram::Histogram;
+
+use crate::raft_log::stat::FlushLatencyPercentiles;
 use crate::raft_log::stat::FlushMetrics;
 use crate::raft_log::wal::batch_metrics::BatchMetrics;
+
+#[derive(Debug, Default)]
+struct FlushLatencyHistograms {
+    group_wait: Histogram,
+    queued_wait: Histogram,
+    write: Histogram,
+    sync: Histogram,
+    batch: Histogram,
+}
+
+impl FlushLatencyHistograms {
+    fn record_batch(&mut self, metrics: &BatchMetrics) {
+        if metrics.group_wait_us > 0 {
+            self.group_wait.record(metrics.group_wait_us);
+        }
+
+        self.queued_wait.record(metrics.queued_wait_max_us);
+        self.write.record(metrics.write_us);
+
+        if metrics.sync_us > 0 {
+            self.sync.record(metrics.sync_us);
+        }
+
+        self.batch.record(metrics.batch_us);
+    }
+
+    fn snapshot(&self) -> FlushLatencyPercentileSnapshot {
+        FlushLatencyPercentileSnapshot {
+            group_wait: percentiles(&self.group_wait),
+            queued_wait: percentiles(&self.queued_wait),
+            write: percentiles(&self.write),
+            sync: percentiles(&self.sync),
+            batch: percentiles(&self.batch),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct FlushLatencyPercentileSnapshot {
+    group_wait: FlushLatencyPercentiles,
+    queued_wait: FlushLatencyPercentiles,
+    write: FlushLatencyPercentiles,
+    sync: FlushLatencyPercentiles,
+    batch: FlushLatencyPercentiles,
+}
+
+fn percentiles(histogram: &Histogram) -> FlushLatencyPercentiles {
+    let stats = histogram.percentile_stats();
+    FlushLatencyPercentiles {
+        p50_us: stats.p50,
+        p90_us: stats.p90,
+        p99_us: stats.p99,
+    }
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct AtomicFlushMetrics {
@@ -29,6 +87,7 @@ pub(crate) struct AtomicFlushMetrics {
     last_callback_count: AtomicU64,
     last_sync_us: AtomicU64,
     last_queued_wait_max_us: AtomicU64,
+    latency_histograms: Mutex<FlushLatencyHistograms>,
 }
 
 impl AtomicFlushMetrics {
@@ -68,9 +127,14 @@ impl AtomicFlushMetrics {
         self.last_sync_us.store(metrics.sync_us, Ordering::Relaxed);
         self.last_queued_wait_max_us
             .store(metrics.queued_wait_max_us, Ordering::Relaxed);
+
+        self.latency_histograms.lock().unwrap().record_batch(&metrics);
     }
 
     pub(crate) fn snapshot(&self) -> FlushMetrics {
+        let latency_percentiles =
+            self.latency_histograms.lock().unwrap().snapshot();
+
         FlushMetrics {
             batch_count: self.batch_count.load(Ordering::Relaxed),
             sync_batch_count: self.sync_batch_count.load(Ordering::Relaxed),
@@ -101,6 +165,11 @@ impl AtomicFlushMetrics {
             last_queued_wait_max_us: self
                 .last_queued_wait_max_us
                 .load(Ordering::Relaxed),
+            group_wait_percentiles: latency_percentiles.group_wait,
+            queued_wait_percentiles: latency_percentiles.queued_wait,
+            write_percentiles: latency_percentiles.write,
+            sync_percentiles: latency_percentiles.sync,
+            batch_percentiles: latency_percentiles.batch,
         }
     }
 }
@@ -117,5 +186,76 @@ fn update_max(current: &AtomicU64, value: u64) {
             Ok(_) => return,
             Err(next) => old = next,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_latency_histograms_report_percentiles() {
+        let mut histograms = FlushLatencyHistograms::default();
+
+        for value_us in [100, 2_000, 20_000, 3_000_000] {
+            histograms.record_batch(&BatchMetrics {
+                batch_size: 1,
+                sync_batch: true,
+                write_bytes: 1,
+                callback_count: 1,
+                group_wait_us: value_us,
+                queued_wait_us: value_us,
+                queued_wait_max_us: value_us,
+                write_us: value_us,
+                sync_us: value_us,
+                batch_us: value_us,
+            });
+        }
+
+        let snapshot = histograms.snapshot();
+        assert_percentiles_populated(snapshot.group_wait);
+        assert_percentiles_populated(snapshot.queued_wait);
+        assert_percentiles_populated(snapshot.write);
+        assert_percentiles_populated(snapshot.sync);
+        assert_percentiles_populated(snapshot.batch);
+    }
+
+    #[test]
+    fn test_flush_metrics_reports_latency_percentiles() {
+        let metrics = AtomicFlushMetrics::default();
+
+        for value_us in [100, 2_000, 20_000, 3_000_000] {
+            metrics.record_batch(BatchMetrics {
+                batch_size: 1,
+                sync_batch: true,
+                write_bytes: 1,
+                callback_count: 1,
+                group_wait_us: value_us,
+                queued_wait_us: value_us,
+                queued_wait_max_us: value_us,
+                write_us: value_us,
+                sync_us: value_us,
+                batch_us: value_us,
+            });
+        }
+
+        let snapshot = metrics.snapshot();
+        assert_percentiles_populated(snapshot.group_wait_percentiles);
+        assert_percentiles_populated(snapshot.queued_wait_percentiles);
+        assert_percentiles_populated(snapshot.write_percentiles);
+        assert_percentiles_populated(snapshot.sync_percentiles);
+        assert_percentiles_populated(snapshot.batch_percentiles);
+    }
+
+    fn assert_percentiles_populated(percentiles: FlushLatencyPercentiles) {
+        assert!(percentiles.p50_us > 0, "got {percentiles:?}");
+        assert!(
+            percentiles.p90_us >= percentiles.p50_us,
+            "got {percentiles:?}"
+        );
+        assert!(
+            percentiles.p99_us >= percentiles.p90_us,
+            "got {percentiles:?}"
+        );
     }
 }
