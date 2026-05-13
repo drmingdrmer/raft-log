@@ -8,6 +8,9 @@ use std::sync::RwLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Duration;
+use std::time::Instant;
 
 use log::debug;
 use log::info;
@@ -15,10 +18,13 @@ use log::info;
 use crate::ChunkId;
 use crate::Types;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
+use crate::raft_log::wal::atomic_flush_metrics::AtomicFlushMetrics;
+use crate::raft_log::wal::batch_metrics::BatchMetrics;
 use crate::raft_log::wal::callback::Callback;
 use crate::raft_log::wal::flush_request::FlushStat;
 use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WorkerRequest;
+use crate::raft_log::wal::queued_write::QueuedWrite;
 
 pub(crate) struct FileEntry<T: Types> {
     pub(crate) starting_offset: u64,
@@ -62,10 +68,51 @@ impl<T: Types> FileEntry<T> {
     }
 }
 
+struct WriteBatch<T: Types> {
+    writes: Vec<QueuedWrite<T>>,
+    max_seq: u64,
+    last_non_flush: Option<SeqRequest<T>>,
+    max_size: usize,
+}
+
+impl<T: Types> WriteBatch<T> {
+    fn new(max_size: usize) -> Self {
+        Self {
+            writes: Vec::with_capacity(max_size),
+            max_seq: 0,
+            last_non_flush: None,
+            max_size,
+        }
+    }
+
+    fn push_seq_request(&mut self, seq_req: SeqRequest<T>) -> bool {
+        let SeqRequest {
+            seq,
+            queued_at,
+            req,
+        } = seq_req;
+
+        if let WorkerRequest::Write(write) = req {
+            self.max_seq = self.max_seq.max(seq);
+            self.writes.push(QueuedWrite { queued_at, write });
+            true
+        } else {
+            self.last_non_flush = Some(SeqRequest {
+                seq,
+                queued_at,
+                req,
+            });
+            false
+        }
+    }
+}
+
 pub(crate) struct FlushWorker<T: Types> {
     rx: Receiver<SeqRequest<T>>,
     files: Vec<FileEntry<T>>,
     cache: Arc<RwLock<PayloadCache<T>>>,
+    metrics: Arc<AtomicFlushMetrics>,
+    flush_batch_wait: Duration,
     /// The highest completed request sequence number.
     ///
     /// Updated (with `Relaxed` ordering) after processing each request or
@@ -91,11 +138,15 @@ impl<T: Types> FlushWorker<T> {
         file_entry: FileEntry<T>,
         cache: Arc<RwLock<PayloadCache<T>>>,
         done_seq: Arc<AtomicU64>,
+        metrics: Arc<AtomicFlushMetrics>,
+        flush_batch_wait: Duration,
     ) -> Self {
         Self {
             rx,
             files: vec![file_entry],
             cache,
+            metrics,
+            flush_batch_wait,
             done_seq,
         }
     }
@@ -109,54 +160,58 @@ impl<T: Types> FlushWorker<T> {
 
     fn run_inner(mut self) -> Result<(), io::Error> {
         loop {
+            // Write requests should be batched to maximize throughput.
+            let batch_size = 1024;
+            let mut batch = WriteBatch::new(batch_size);
+
             let req = self.rx.recv();
-            let Ok(SeqRequest { seq, req }) = req else {
+            let Ok(seq_req) = req else {
                 log::info!("FlushWorker input channel closed, quit");
                 return Ok(());
             };
 
-            let WorkerRequest::Write(w) = req else {
+            if !batch.push_seq_request(seq_req) {
+                let Some(SeqRequest { seq, req, .. }) =
+                    batch.last_non_flush.take()
+                else {
+                    unreachable!("non-write request must be stored");
+                };
                 self.handle_non_flush_request(req)?;
                 self.done_seq.store(seq, Ordering::Relaxed);
                 continue;
-            };
-
-            // Write requests should be batched to maximize throughput.
-
-            let batch_size = 1024;
-
-            let mut batch = Vec::with_capacity(batch_size);
-            batch.push(w);
-            let mut max_seq = seq;
-            let mut last_non_flush = None;
-
-            for seq_req in self.rx.try_iter().take(batch_size) {
-                if let WorkerRequest::Write(w) = seq_req.req {
-                    max_seq = max_seq.max(seq_req.seq);
-                    batch.push(w);
-                } else {
-                    last_non_flush = Some(seq_req);
-                    break;
-                };
             }
 
-            debug!("batched write: {}", batch.len());
+            let group_wait = self.collect_write_batch(&mut batch);
 
-            {
+            debug!("batched write: {}", batch.writes.len());
+
+            let sync_result = {
                 // TODO: possible to use write_all_vectored()?
 
                 let mut last_file: &File = &self.files.last().unwrap().f;
-                for w in &batch {
-                    if !w.data.is_empty() {
-                        last_file.write_all(&w.data)?;
-                    }
+                let batch_start = Instant::now();
+                let mut batch_metrics =
+                    BatchMetrics::new(batch.writes.len(), group_wait);
+                for w in &batch.writes {
+                    batch_metrics.record_queued_write(batch_start, w);
                 }
 
-                let need_sync = batch.iter().any(|w| w.sync);
+                let write_start = Instant::now();
+                for w in &batch.writes {
+                    if !w.write.data.is_empty() {
+                        last_file.write_all(&w.write.data)?;
+                    }
+                }
+                batch_metrics.record_write_time(write_start);
+
+                let need_sync = batch.writes.iter().any(|w| w.write.sync);
 
                 let sync_result = if need_sync {
-                    let upto_offset = batch.last().unwrap().upto_offset;
+                    let upto_offset =
+                        batch.writes.last().unwrap().write.upto_offset;
+                    let sync_start = Instant::now();
                     let res = self.sync_all_files(upto_offset);
+                    batch_metrics.record_sync_time(sync_start);
                     if let Err(ref e) = res {
                         log::error!(
                             "Failed to flush upto offset {}: {}",
@@ -169,16 +224,28 @@ impl<T: Types> FlushWorker<T> {
                     Ok(())
                 };
 
-                for w in batch {
-                    if let Some(cb) = w.callback {
-                        match &sync_result {
-                            Ok(()) => cb.send(Ok(())),
-                            Err(e) => {
-                                cb.send(Err(io::Error::new(
-                                    e.kind(),
-                                    e.to_string(),
-                                )));
-                            }
+                batch_metrics.record_batch_time(batch_start);
+                self.metrics.record_batch(batch_metrics);
+
+                sync_result
+            };
+
+            let WriteBatch {
+                writes,
+                mut max_seq,
+                last_non_flush,
+                ..
+            } = batch;
+
+            for w in writes {
+                if let Some(cb) = w.write.callback {
+                    match &sync_result {
+                        Ok(()) => cb.send(Ok(())),
+                        Err(e) => {
+                            cb.send(Err(io::Error::new(
+                                e.kind(),
+                                e.to_string(),
+                            )));
                         }
                     }
                 }
@@ -188,6 +255,7 @@ impl<T: Types> FlushWorker<T> {
             if let Some(SeqRequest {
                 seq: nf_seq,
                 req: last,
+                ..
             }) = last_non_flush
             {
                 self.handle_non_flush_request(last)?;
@@ -196,6 +264,34 @@ impl<T: Types> FlushWorker<T> {
 
             self.done_seq.store(max_seq, Ordering::Relaxed);
         }
+    }
+
+    fn collect_write_batch(&self, batch: &mut WriteBatch<T>) -> Duration {
+        let loop_started_at = Instant::now();
+        let loop_deadline = loop_started_at + self.flush_batch_wait;
+
+        while batch.last_non_flush.is_none()
+            && batch.writes.len() < batch.max_size
+        {
+            let now = Instant::now();
+            if loop_deadline <= now {
+                break;
+            }
+
+            let remaining = loop_deadline - now;
+            match self.rx.recv_timeout(remaining) {
+                Ok(seq_req) => {
+                    if !batch.push_seq_request(seq_req) {
+                        break;
+                    }
+                }
+                Err(
+                    RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected,
+                ) => break,
+            }
+        }
+
+        loop_started_at.elapsed()
     }
 
     fn handle_non_flush_request(

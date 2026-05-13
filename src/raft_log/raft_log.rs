@@ -455,6 +455,8 @@ impl<T: Types> RaftLog<T> {
                 .access_stat
                 .cache_hit
                 .load(Ordering::Relaxed),
+
+            flush_metrics: self.wal.flush_metrics(),
         }
     }
 

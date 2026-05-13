@@ -1,4 +1,5 @@
 use std::sync::mpsc::SyncSender;
+use std::time::Instant;
 
 use crate::Types;
 use crate::raft_log::wal::flush_worker::FileEntry;
@@ -11,6 +12,7 @@ use crate::raft_log::wal::flush_worker::FileEntry;
 /// sent requests have been processed.
 pub(crate) struct SeqRequest<T: Types> {
     pub(crate) seq: u64,
+    pub(crate) queued_at: Instant,
     pub(crate) req: WorkerRequest<T>,
 }
 

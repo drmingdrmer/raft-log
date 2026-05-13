@@ -957,6 +957,36 @@ fn test_flush_without_sync_data_visible_after_reopen() -> Result<(), io::Error>
 }
 
 #[test]
+fn test_flush_batch_wait_groups_adjacent_sync_flushes() -> Result<(), io::Error>
+{
+    let mut ctx = TestContext::new()?;
+    ctx.config.flush_batch_wait = Some(Duration::from_millis(500));
+
+    let mut rl = ctx.new_raft_log()?;
+
+    rl.append([((1, 0), ss("alpha"))])?;
+    let (tx1, rx1) = sync_channel::<Result<(), io::Error>>(1);
+    rl.flush(true, Some(tx1))?;
+
+    rl.append([((1, 1), ss("beta"))])?;
+    let (tx2, rx2) = sync_channel::<Result<(), io::Error>>(1);
+    rl.flush(true, Some(tx2))?;
+
+    rx1.recv().map_err(|e| io::Error::other(format!("callback: {e}")))??;
+    rx2.recv().map_err(|e| io::Error::other(format!("callback: {e}")))??;
+
+    let metrics = rl.stat().flush_metrics;
+    assert!(
+        metrics.batch_size_max >= 2,
+        "expected adjacent sync flushes to share a batch, got {metrics:?}"
+    );
+    assert_eq!(1, metrics.sync_batch_count, "got {metrics:?}");
+    assert_eq!(2, metrics.write_request_count, "got {metrics:?}");
+
+    Ok(())
+}
+
+#[test]
 fn test_stat() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;

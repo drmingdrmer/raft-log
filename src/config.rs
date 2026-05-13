@@ -1,8 +1,11 @@
 use std::format;
+use std::time::Duration;
 
 use crate::ChunkId;
 use crate::errors::InvalidChunkFileName;
 use crate::num;
+
+const DEFAULT_FLUSH_BATCH_WAIT: Duration = Duration::from_millis(1);
 
 /// Configuration for Raft-log.
 ///
@@ -36,6 +39,12 @@ pub struct Config {
     /// If truncate, the chunk is considered successfully opened.
     /// Otherwise, an io::Error will be returned.
     pub truncate_incomplete_record: Option<bool>,
+
+    /// Maximum time the flush worker waits for more write requests before
+    /// starting a sync batch.
+    ///
+    /// Defaults to 1 millisecond.
+    pub flush_batch_wait: Option<Duration>,
 }
 
 impl Config {
@@ -65,6 +74,7 @@ impl Config {
             chunk_max_records,
             chunk_max_size,
             truncate_incomplete_record: None,
+            flush_batch_wait: None,
         }
     }
 
@@ -96,6 +106,11 @@ impl Config {
     /// Returns whether to truncate incomplete records (defaults to true)
     pub fn truncate_incomplete_record(&self) -> bool {
         self.truncate_incomplete_record.unwrap_or(true)
+    }
+
+    /// Returns the bounded wait before syncing a flush batch.
+    pub fn flush_batch_wait(&self) -> Duration {
+        self.flush_batch_wait.unwrap_or(DEFAULT_FLUSH_BATCH_WAIT)
     }
 
     /// Returns the full path for a given chunk ID

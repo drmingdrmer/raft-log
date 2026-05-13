@@ -1,6 +1,9 @@
+pub(crate) mod atomic_flush_metrics;
+pub(crate) mod batch_metrics;
 pub(crate) mod callback;
 pub(crate) mod flush_request;
 pub(crate) mod flush_worker;
+pub(crate) mod queued_write;
 
 use std::collections::BTreeMap;
 use std::io;
@@ -9,6 +12,7 @@ use std::sync::RwLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::SyncSender;
+use std::time::Instant;
 
 use codeq::OffsetSize;
 pub(crate) use flush_request::FlushStat;
@@ -23,8 +27,10 @@ use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
+use crate::raft_log::stat::FlushMetrics;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::raft_log::wal::atomic_flush_metrics::AtomicFlushMetrics;
 use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WriteRequest;
 use crate::raft_log::wal::flush_worker::FileEntry;
@@ -54,6 +60,9 @@ where T: Types
 
     /// Shared with `FlushWorker`; stores the highest completed seq.
     done_seq: Arc<AtomicU64>,
+
+    /// Shared with `FlushWorker`; stores aggregated flush metrics.
+    flush_metrics: Arc<AtomicFlushMetrics>,
 }
 
 impl<T> RaftLogWAL<T>
@@ -85,9 +94,17 @@ where T: Types
         let file_entry = FileEntry::new(offset, f, prev_last_log_id);
 
         let done_seq = Arc::new(AtomicU64::new(0));
+        let flush_metrics = Arc::new(AtomicFlushMetrics::default());
 
         let (flush_tx, rx) = std::sync::mpsc::sync_channel(1024);
-        let worker = FlushWorker::new(rx, file_entry, cache, done_seq.clone());
+        let worker = FlushWorker::new(
+            rx,
+            file_entry,
+            cache,
+            done_seq.clone(),
+            flush_metrics.clone(),
+            config.flush_batch_wait(),
+        );
 
         worker.spawn();
 
@@ -98,6 +115,7 @@ where T: Types
             flush_tx,
             sent_seq: 0,
             done_seq,
+            flush_metrics,
         }
     }
 
@@ -108,6 +126,7 @@ where T: Types
         self.flush_tx
             .send(SeqRequest {
                 seq: self.sent_seq,
+                queued_at: Instant::now(),
                 req,
             })
             .map_err(|e| {
@@ -125,6 +144,10 @@ where T: Types
         while self.done_seq.load(Ordering::Relaxed) < self.sent_seq {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+    }
+
+    pub(crate) fn flush_metrics(&self) -> FlushMetrics {
+        self.flush_metrics.snapshot()
     }
 
     /// Hand the pending data buffer to the worker for writing.
