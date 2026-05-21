@@ -39,6 +39,7 @@ impl<T: Types> RaftLogStateMachine<T> {
 
 impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
     type Error = RaftLogStateError<T>;
+    type Checkpoint = RaftLogState<T>;
 
     fn apply(
         &mut self,
@@ -79,5 +80,51 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
         }
 
         self.log_state.apply(rec)
+    }
+
+    fn checkpoint(&self) -> Self::Checkpoint {
+        self.log_state.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ChunkId;
+    use crate::Config;
+    use crate::WALRecord;
+    use crate::api::state_machine::StateMachine;
+    use crate::errors::RaftLogStateError;
+    use crate::raft_log::state_machine::RaftLogStateMachine;
+    use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+    use crate::testing::TestTypes;
+    use crate::testing::ss;
+    use crate::types::Segment;
+
+    #[test]
+    fn test_checkpoint_returns_current_log_state()
+    -> Result<(), RaftLogStateError<TestTypes>> {
+        let mut sm = RaftLogStateMachine::<TestTypes>::new(&Config::default());
+        let segment = Segment::new(0, 0);
+
+        sm.apply(&WALRecord::SaveVote((2, 1)), ChunkId(0), segment)?;
+        sm.apply(
+            &WALRecord::Append((3, 7), ss("payload")),
+            ChunkId(0),
+            segment,
+        )?;
+        sm.apply(&WALRecord::Commit((3, 7)), ChunkId(0), segment)?;
+
+        assert_eq!(
+            RaftLogState {
+                vote: Some((2, 1)),
+                last: Some((3, 7)),
+                committed: Some((3, 7)),
+                purged: None,
+                user_data: None,
+            },
+            sm.checkpoint()
+        );
+
+        Ok(())
     }
 }

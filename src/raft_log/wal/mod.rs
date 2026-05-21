@@ -23,6 +23,7 @@ use crate::ChunkId;
 use crate::Config;
 use crate::Types;
 use crate::WALRecord;
+use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
@@ -223,20 +224,23 @@ where T: Types
     ///
     /// # Arguments
     ///
-    /// * `get_state` - Function to retrieve the current Raft log state. This
-    ///   function is necessary because the state is not stored in the WAL.
+    /// * `state_machine` - The state machine that provides the checkpoint to
+    ///   store at the start of the next chunk.
     ///
     /// # Returns
     ///
-    /// Returns Some(RaftLogState) if a chunk was closed, None otherwise
+    /// Returns the checkpoint if a chunk was closed, None otherwise.
     ///
     /// # Errors
     ///
     /// Returns an IO error if chunk operations fail
-    pub(crate) fn try_close_full_chunk(
+    pub(crate) fn try_close_full_chunk<SM>(
         &mut self,
-        get_state: impl FnOnce() -> RaftLogState<T>,
-    ) -> Result<Option<RaftLogState<T>>, io::Error> {
+        state_machine: &SM,
+    ) -> Result<Option<SM::Checkpoint>, io::Error>
+    where
+        SM: StateMachine<WALRecord<T>, Checkpoint = RaftLogState<T>>,
+    {
         if !self.is_open_chunk_full() {
             return Ok(None);
         }
@@ -250,14 +254,14 @@ where T: Types
             ChunkId(offset.0)
         );
 
-        let state = get_state();
+        let checkpoint = state_machine.checkpoint();
 
         let new_open = {
             let chunk_id = ChunkId(offset.0);
             OpenChunk::create(
                 config,
                 chunk_id,
-                WALRecord::State(state.clone()),
+                WALRecord::State(checkpoint.clone()),
             )?
         };
 
@@ -276,14 +280,14 @@ where T: Types
         self.send_request(WorkerRequest::AppendFile(FileEntry::new(
             offset.0,
             self.open.chunk.f.clone(),
-            state.last().cloned(),
+            checkpoint.last().cloned(),
         )))?;
 
         let chunk = old_open.chunk;
         let closed_id = chunk.chunk_id();
-        let closed = ClosedChunk::new(chunk, state.clone());
+        let closed = ClosedChunk::new(chunk, checkpoint.clone());
         self.closed.insert(closed_id, closed);
-        Ok(Some(state))
+        Ok(Some(checkpoint))
     }
 
     /// Loads the payload for a given log entry.

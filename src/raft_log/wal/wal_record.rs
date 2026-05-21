@@ -32,7 +32,7 @@ pub enum WALRecord<T: Types> {
     /// Purge log entries up to (and including) the specified log id.
     PurgeUpto(T::LogId),
 
-    /// Save a snapshot of the complete state of the Raft log.
+    /// Save a compact Raft log checkpoint.
     State(RaftLogState<T>),
 }
 

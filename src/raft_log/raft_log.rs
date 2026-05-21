@@ -64,7 +64,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         &mut self,
         user_data: Option<T::UserData>,
     ) -> Result<Segment, io::Error> {
-        let mut state = self.log_state().clone();
+        let mut state = self.state_machine.checkpoint();
         state.user_data = user_data;
         let record = WALRecord::State(state);
         self.append_and_apply(&record)
@@ -173,7 +173,7 @@ impl<T: Types> RaftLog<T> {
         let chunks = self.wal.closed.clone();
 
         DumpRaftLog {
-            state: self.state_machine.log_state.clone(),
+            state: self.state_machine.checkpoint(),
             logs,
             cache,
             chunks,
@@ -240,12 +240,10 @@ impl<T: Types> RaftLog<T> {
             }
 
             prev_end_offset = Some(chunk.last_segment().end().0);
-            last_log_id = sm.log_state.last.clone();
+            let checkpoint = sm.checkpoint();
+            last_log_id = checkpoint.last().cloned();
 
-            closed.insert(
-                chunk_id,
-                ClosedChunk::new(chunk, sm.log_state.clone()),
-            );
+            closed.insert(chunk_id, ClosedChunk::new(chunk, checkpoint));
         }
 
         let open = Self::reopen_last_closed(&mut closed);
@@ -256,7 +254,7 @@ impl<T: Types> RaftLog<T> {
             OpenChunk::create(
                 config.clone(),
                 ChunkId(prev_end_offset.unwrap_or_default()),
-                WALRecord::State(sm.log_state.clone()),
+                WALRecord::State(sm.checkpoint()),
             )?
         };
 
@@ -433,7 +431,7 @@ impl<T: Types> RaftLog<T> {
             global_start: open.chunk.global_start(),
             global_end: open.chunk.global_end(),
             size: open.chunk.chunk_size(),
-            log_state: self.log_state().clone(),
+            log_state: self.state_machine.checkpoint(),
         };
         let cache = self.state_machine.payload_cache.read().unwrap();
 
@@ -507,8 +505,7 @@ impl<T: Types> RaftLog<T> {
             self.wal.last_segment(),
         )?;
 
-        self.wal
-            .try_close_full_chunk(|| self.state_machine.log_state.clone())?;
+        self.wal.try_close_full_chunk(&self.state_machine)?;
 
         Ok(self.wal.last_segment())
     }
