@@ -5,23 +5,19 @@ use codeq::Decode;
 use codeq::error_context_ext::ErrorContextExt;
 
 use crate::ChunkId;
-use crate::RaftLogRecord;
-use crate::Types;
 use crate::offset_reader::OffsetReader;
 use crate::types::Segment;
 
-pub(crate) struct RecordIterator<R, T> {
+pub(crate) struct RecordIterator<R, Rec> {
     r: OffsetReader<R>,
     total_size: u64,
     chunk_id: ChunkId,
     error: Option<io::Error>,
-    _p: PhantomData<T>,
+    _p: PhantomData<Rec>,
 }
 
-impl<R, T> RecordIterator<R, T>
-where
-    R: io::Read,
-    T: Types,
+impl<R, Rec> RecordIterator<R, Rec>
+where R: io::Read
 {
     pub(crate) fn new(r: R, size: u64, chunk_id: ChunkId) -> Self {
         Self {
@@ -34,12 +30,12 @@ where
     }
 }
 
-impl<R, T> Iterator for RecordIterator<R, T>
+impl<R, Rec> Iterator for RecordIterator<R, Rec>
 where
     R: io::Read,
-    T: Types,
+    Rec: Decode,
 {
-    type Item = Result<(Segment, RaftLogRecord<T>), io::Error>;
+    type Item = Result<(Segment, Rec), io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.error.is_some() {
@@ -51,7 +47,7 @@ where
             return None;
         }
 
-        let r = RaftLogRecord::<T>::decode(&mut self.r);
+        let r = Rec::decode(&mut self.r);
 
         let res = r
             .map(|r| {

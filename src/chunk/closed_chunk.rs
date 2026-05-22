@@ -1,3 +1,4 @@
+use crate::RaftLogRecord;
 use crate::Types;
 use crate::chunk::Chunk;
 use crate::raft_log::stat::ChunkStat;
@@ -8,13 +9,16 @@ pub(crate) struct ClosedChunk<T>
 where T: Types
 {
     pub(crate) state: RaftLogState<T>,
-    pub(crate) chunk: Chunk<T>,
+    pub(crate) chunk: Chunk<RaftLogRecord<T>>,
 }
 
 impl<T> ClosedChunk<T>
 where T: Types
 {
-    pub(crate) fn new(chunk: Chunk<T>, state: RaftLogState<T>) -> Self {
+    pub(crate) fn new(
+        chunk: Chunk<RaftLogRecord<T>>,
+        state: RaftLogState<T>,
+    ) -> Self {
         Self { state, chunk }
     }
 

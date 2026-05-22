@@ -29,8 +29,6 @@ use log::warn;
 use record_iterator::RecordIterator;
 
 use crate::Config;
-use crate::RaftLogRecord;
-use crate::Types;
 use crate::chunk::chunk_id::ChunkId;
 use crate::num::format_pad9_u64;
 use crate::types::Segment;
@@ -42,7 +40,7 @@ use crate::types::Segment;
 /// - Global offsets for all records it contains
 /// - Metadata about its position in the complete log
 #[derive(Debug, Clone)]
-pub struct Chunk<T> {
+pub struct Chunk<R> {
     /// File handle for the chunk's persistent storage
     pub(crate) f: Arc<File>,
 
@@ -62,10 +60,10 @@ pub struct Chunk<T> {
     #[allow(dead_code)]
     pub(crate) truncated: Option<u64>,
 
-    pub(crate) _p: PhantomData<T>,
+    pub(crate) _p: PhantomData<R>,
 }
 
-impl<T> Chunk<T> {
+impl<R> Chunk<R> {
     /// Returns the number of records stored in this chunk.
     pub(crate) fn records_count(&self) -> usize {
         self.global_offsets.len() - 1
@@ -132,8 +130,8 @@ impl<T> Chunk<T> {
     }
 }
 
-impl<T> Chunk<T>
-where T: Types
+impl<R> Chunk<R>
+where R: Decode + 'static
 {
     /// Opens a chunk and loads its records.
     ///
@@ -144,7 +142,7 @@ where T: Types
     pub(crate) fn open(
         config: Arc<Config>,
         chunk_id: ChunkId,
-    ) -> Result<(Self, Vec<RaftLogRecord<T>>), io::Error> {
+    ) -> Result<(Self, Vec<R>), io::Error> {
         let f = Self::open_chunk_file(&config, chunk_id)?;
         let arc_f = Arc::new(f);
         let file_size = arc_f.metadata()?.len();
@@ -316,8 +314,7 @@ where T: Types
     pub(crate) fn dump(
         config: &Config,
         chunk_id: ChunkId,
-    ) -> Result<Vec<Result<(Segment, RaftLogRecord<T>), io::Error>>, io::Error>
-    {
+    ) -> Result<Vec<Result<(Segment, R), io::Error>>, io::Error> {
         let f = Self::open_chunk_file(config, chunk_id)?;
         let it = Self::load_records_iter(config, Arc::new(f), chunk_id)?;
 
@@ -334,7 +331,7 @@ where T: Types
         f: Arc<File>,
         chunk_id: ChunkId,
     ) -> Result<
-        impl Iterator<Item = Result<(Segment, RaftLogRecord<T>), io::Error>> + '_,
+        impl Iterator<Item = Result<(Segment, R), io::Error>> + '_,
         io::Error,
     > {
         let file_size = f
@@ -351,17 +348,14 @@ where T: Types
     /// Uses `pread` (positional read) to atomically read from a specific offset
     /// without changing the file position. This avoids race conditions when
     /// multiple threads read from the same chunk concurrently.
-    pub(crate) fn read_record(
-        &self,
-        segment: Segment,
-    ) -> Result<RaftLogRecord<T>, io::Error> {
+    pub(crate) fn read_record(&self, segment: Segment) -> Result<R, io::Error> {
         let offset = segment.offset().0 - self.global_start();
         let size = *segment.size() as usize;
 
         let mut buf = vec![0u8; size];
         self.f.read_exact_at(&mut buf, offset)?;
 
-        RaftLogRecord::<T>::decode(&buf[..]).context(|| {
+        R::decode(&buf[..]).context(|| {
             format!("decode Record {:?} in {}", segment, self.chunk_id())
         })
     }

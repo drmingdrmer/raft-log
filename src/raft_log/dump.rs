@@ -47,7 +47,7 @@ impl<T: Types> DumpApi<T> for Dump<T> {
 
         let chunk_ids = RaftLog::<T>::load_chunk_ids(config)?;
         for chunk_id in chunk_ids {
-            let it = Chunk::<T>::dump(config, chunk_id)?;
+            let it = Chunk::<RaftLogRecord<T>>::dump(config, chunk_id)?;
             for (i, res) in it.into_iter().enumerate() {
                 write_record(chunk_id, i as u64, res)?;
             }
@@ -89,10 +89,12 @@ impl<T: Types> DumpApi<T> for RefDump<'_, T> {
         let chunk_ids = closed.chain([self.raft_log.wal.open.chunk.chunk_id()]);
 
         for chunk_id in chunk_ids {
-            let f =
-                Chunk::<T>::open_chunk_file(self.config.as_ref(), chunk_id)?;
+            let f = Chunk::<RaftLogRecord<T>>::open_chunk_file(
+                self.config.as_ref(),
+                chunk_id,
+            )?;
 
-            let it = Chunk::load_records_iter(
+            let it = Chunk::<RaftLogRecord<T>>::load_records_iter(
                 self.config.as_ref(),
                 Arc::new(f),
                 chunk_id,

@@ -52,7 +52,7 @@ pub(crate) struct RaftLogWAL<T>
 where T: Types
 {
     pub(crate) config: Arc<Config>,
-    pub(crate) open: OpenChunk<T>,
+    pub(crate) open: OpenChunk<RaftLogRecord<T>>,
     pub(crate) closed: BTreeMap<ChunkId, ClosedChunk<T>>,
 
     flush_tx: SyncSender<SeqRequest<T>>,
@@ -82,7 +82,7 @@ where T: Types
     pub(crate) fn new(
         config: Arc<Config>,
         closed: BTreeMap<ChunkId, ClosedChunk<T>>,
-        open: OpenChunk<T>,
+        open: OpenChunk<RaftLogRecord<T>>,
         cache: Arc<RwLock<PayloadCache<T>>>,
     ) -> Self {
         let last_closed_chunk_state =

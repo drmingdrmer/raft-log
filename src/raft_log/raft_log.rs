@@ -315,7 +315,7 @@ impl<T: Types> RaftLog<T> {
     /// If reused, the closed chunk will be removed from `closed_chunks`
     fn reopen_last_closed(
         closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<T>>,
-    ) -> Option<OpenChunk<T>> {
+    ) -> Option<OpenChunk<RaftLogRecord<T>>> {
         // If the chunk is truncated, it is not healthy, do not re-open it.
         {
             let (_chunk_id, closed) = closed_chunks.iter().last()?;

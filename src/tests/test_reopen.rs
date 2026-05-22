@@ -20,6 +20,7 @@ use pretty_assertions::assert_eq;
 use crate::ChunkId;
 use crate::Dump;
 use crate::DumpApi;
+use crate::RaftLogRecord;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::raft_log_writer::blocking_flush;
 use crate::chunk::Chunk;
@@ -27,6 +28,8 @@ use crate::testing::TestTypes;
 use crate::testing::ss;
 use crate::tests::context::TestContext;
 use crate::tests::sample_data;
+
+type TestChunk = Chunk<RaftLogRecord<TestTypes>>;
 
 /// Reopened RaftLog should have the same state and entries as before.
 /// - it re-open the last closed chunk by default
@@ -149,7 +152,7 @@ fn test_reopen_unfinished_chunk() -> Result<(), io::Error> {
     // Truncate the last record, the last record is at [99,127) size=28
     {
         let chunk_id = ChunkId(509);
-        let f = Chunk::<TestTypes>::open_chunk_file(&ctx.config, chunk_id)?;
+        let f = TestChunk::open_chunk_file(&ctx.config, chunk_id)?;
         f.set_len(126)?;
 
         // Last purge record will be discarded.
@@ -215,7 +218,7 @@ fn test_reopen_unfinished_tailing_zero_chunk() -> Result<(), io::Error> {
         // Append several zero bytes
         {
             let chunk_id = ChunkId(509);
-            let f = Chunk::<TestTypes>::open_chunk_file(&ctx.config, chunk_id)?;
+            let f = TestChunk::open_chunk_file(&ctx.config, chunk_id)?;
             f.set_len(129 + append_zeros)?;
         }
 
@@ -274,7 +277,7 @@ fn test_reopen_unfinished_tailing_not_all_zero_chunk() -> Result<(), io::Error>
     // Append several zero bytes followed by a one
     {
         let chunk_id = ChunkId(509);
-        let mut f = Chunk::<TestTypes>::open_chunk_file(&ctx.config, chunk_id)?;
+        let mut f = TestChunk::open_chunk_file(&ctx.config, chunk_id)?;
         f.set_len(129 + append_zeros)?;
 
         f.seek(io::SeekFrom::Start(129 + append_zeros))?;
@@ -337,10 +340,7 @@ fn test_reopen_unfinished_non_last_chunk() -> Result<(), io::Error> {
     // the last record is at [148,183) size=35
     {
         let second_last_chunk_id = ChunkId(324);
-        let f = Chunk::<TestTypes>::open_chunk_file(
-            &ctx.config,
-            second_last_chunk_id,
-        )?;
+        let f = TestChunk::open_chunk_file(&ctx.config, second_last_chunk_id)?;
         f.set_len(182)?;
     }
 
@@ -394,8 +394,7 @@ fn test_reopen_damaged_last_record() -> Result<(), io::Error> {
     // damage the last record, [99,127) size=28
     {
         let last_chunk_id = ChunkId(509);
-        let mut f =
-            Chunk::<TestTypes>::open_chunk_file(&ctx.config, last_chunk_id)?;
+        let mut f = TestChunk::open_chunk_file(&ctx.config, last_chunk_id)?;
 
         let mut byte_buf = [0u8; 1];
         f.read_exact_at(&mut byte_buf, 126)?;

@@ -7,32 +7,36 @@ use codeq::Encode;
 
 use crate::ChunkId;
 use crate::Config;
-use crate::RaftLogRecord;
-use crate::Types;
 use crate::chunk::Chunk;
 use crate::types::Segment;
 
 #[derive(Debug)]
-pub(crate) struct OpenChunk<T: Types> {
+pub(crate) struct OpenChunk<R> {
     pending_data: Vec<u8>,
-    pub(crate) chunk: Chunk<T>,
+    pub(crate) chunk: Chunk<R>,
 }
 
-impl<T> OpenChunk<T>
-where T: Types
-{
+impl<R> OpenChunk<R> {
     /// Creates a new open chunk from an existing chunk.
-    pub(crate) fn new(chunk: Chunk<T>) -> Self {
+    pub(crate) fn new(chunk: Chunk<R>) -> Self {
         Self {
             pending_data: Vec::new(),
             chunk,
         }
     }
 
+    pub(crate) fn take_pending_data(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pending_data)
+    }
+}
+
+impl<R> OpenChunk<R>
+where R: Encode
+{
     pub(crate) fn create(
         config: Arc<Config>,
         chunk_id: ChunkId,
-        initial_record: RaftLogRecord<T>,
+        initial_record: R,
     ) -> Result<Self, io::Error> {
         let path = config.chunk_path(chunk_id);
         let f = OpenOptions::new()
@@ -64,16 +68,12 @@ where T: Types
 
     pub(crate) fn append_record(
         &mut self,
-        rec: &RaftLogRecord<T>,
+        rec: &R,
     ) -> Result<Segment, io::Error> {
         let size = rec.encode(&mut self.pending_data)?;
 
         self.chunk.append_record_size(size as u64);
 
         Ok(self.chunk.last_segment())
-    }
-
-    pub(crate) fn take_pending_data(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.pending_data)
     }
 }
