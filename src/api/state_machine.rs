@@ -14,10 +14,10 @@ use crate::types::Segment;
 /// in the WAL to build and maintain application state.
 ///
 /// # Type Parameters
-/// * `A` - The type of actions that can be applied to the state machine
+/// * `Act` - The type of actions that can be applied to the state machine
 ///
 /// [`WAL`]: crate::api::wal::WAL
-pub trait StateMachine<A> {
+pub trait StateMachine<Act> {
     /// The type of error that can occur during record application
     type Error: std::error::Error + Debug + 'static;
 
@@ -40,7 +40,7 @@ pub trait StateMachine<A> {
     ///   file.
     fn apply(
         &mut self,
-        record: &WALRecord<A, Self::Checkpoint>,
+        record: &WALRecord<Act, Self::Checkpoint>,
         chunk_id: ChunkId,
         global_segment: Segment,
     ) -> Result<(), Self::Error>;

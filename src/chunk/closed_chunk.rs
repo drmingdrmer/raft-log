@@ -3,21 +3,21 @@ use crate::chunk::Chunk;
 use crate::raft_log::stat::ChunkStat;
 
 #[derive(Debug, Clone)]
-pub(crate) struct ClosedChunk<A, C> {
-    pub(crate) state: C,
-    pub(crate) chunk: Chunk<WALRecord<A, C>>,
+pub(crate) struct ClosedChunk<Act, Chkp> {
+    pub(crate) state: Chkp,
+    pub(crate) chunk: Chunk<WALRecord<Act, Chkp>>,
 }
 
-impl<A, C> ClosedChunk<A, C> {
-    pub(crate) fn new(chunk: Chunk<WALRecord<A, C>>, state: C) -> Self {
+impl<Act, Chkp> ClosedChunk<Act, Chkp> {
+    pub(crate) fn new(chunk: Chunk<WALRecord<Act, Chkp>>, state: Chkp) -> Self {
         Self { state, chunk }
     }
 }
 
-impl<A, C> ClosedChunk<A, C>
-where C: Clone
+impl<Act, Chkp> ClosedChunk<Act, Chkp>
+where Chkp: Clone
 {
-    pub(crate) fn stat(&self) -> ChunkStat<C> {
+    pub(crate) fn stat(&self) -> ChunkStat<Chkp> {
         ChunkStat {
             chunk_id: self.chunk.chunk_id(),
             records_count: self.chunk.records_count() as u64,

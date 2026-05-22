@@ -142,7 +142,7 @@ pub struct FlushLatencyPercentiles {
 
 /// Statistics about a single chunk in the Raft log
 #[derive(Debug, Clone)]
-pub struct ChunkStat<C> {
+pub struct ChunkStat<Chkp> {
     /// Unique identifier for this chunk
     pub chunk_id: ChunkId,
     /// Number of records stored in this chunk
@@ -154,11 +154,11 @@ pub struct ChunkStat<C> {
     /// Size of the chunk in bytes
     pub size: u64,
     /// Checkpoint stored for this chunk.
-    pub log_state: C,
+    pub log_state: Chkp,
 }
 
-impl<C> fmt::Display for ChunkStat<C>
-where C: fmt::Debug
+impl<Chkp> fmt::Display for ChunkStat<Chkp>
+where Chkp: fmt::Debug
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
