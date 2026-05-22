@@ -4,8 +4,8 @@ use std::io;
 use codeq::OffsetSize;
 
 use crate::ChunkId;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::num::format_pad9_u64;
 use crate::types::Segment;
 
@@ -21,7 +21,7 @@ pub fn write_record_debug<T: Types, W: io::Write>(
     w: &mut W,
     chunk_id: ChunkId,
     in_chunk_record_index: u64,
-    res: Result<(Segment, WALRecord<T>), io::Error>,
+    res: Result<(Segment, RaftLogRecord<T>), io::Error>,
 ) -> Result<(), io::Error> {
     match res {
         Ok((seg, rec)) => write_ok(
@@ -41,10 +41,10 @@ pub fn write_record_display<T: Types, W: io::Write>(
     w: &mut W,
     chunk_id: ChunkId,
     in_chunk_record_index: u64,
-    res: Result<(Segment, WALRecord<T>), io::Error>,
+    res: Result<(Segment, RaftLogRecord<T>), io::Error>,
 ) -> Result<(), io::Error>
 where
-    WALRecord<T>: fmt::Display,
+    RaftLogRecord<T>: fmt::Display,
 {
     match res {
         Ok((seg, rec)) => {
@@ -77,13 +77,17 @@ fn write_ok<W: io::Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::raft_log::raft_log_action::RaftLogAction;
     use crate::testing::TestDisplayTypes;
 
-    fn make_input() -> Result<(Segment, WALRecord<TestDisplayTypes>), io::Error>
-    {
+    fn make_input()
+    -> Result<(Segment, RaftLogRecord<TestDisplayTypes>), io::Error> {
         Ok((
             Segment::new(0, 10),
-            WALRecord::Append(3, "hello".to_string()),
+            RaftLogRecord::Action(RaftLogAction::Append(
+                3,
+                "hello".to_string(),
+            )),
         ))
     }
 

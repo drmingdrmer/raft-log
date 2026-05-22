@@ -9,8 +9,8 @@ use log::info;
 
 use crate::ChunkId;
 use crate::Config;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
@@ -24,6 +24,7 @@ use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
 use crate::raft_log::dump_raft_log::DumpRaftLog;
+use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::stat::ChunkStat;
 use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::RaftLogStateMachine;
@@ -66,19 +67,20 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     ) -> Result<Segment, io::Error> {
         let mut state = self.state_machine.checkpoint();
         state.user_data = user_data;
-        let record = WALRecord::State(state);
+        let record = RaftLogRecord::Checkpoint(state);
         self.append_and_apply(&record)
     }
 
     fn save_vote(&mut self, vote: T::Vote) -> Result<Segment, io::Error> {
-        let record = WALRecord::SaveVote(vote.clone());
+        let record = RaftLogRecord::Action(RaftLogAction::SaveVote(vote));
         self.append_and_apply(&record)
     }
 
     fn append<I>(&mut self, entries: I) -> Result<Segment, io::Error>
     where I: IntoIterator<Item = (T::LogId, T::LogPayload)> {
         for (log_id, payload) in entries {
-            let record = WALRecord::Append(log_id, payload);
+            let record =
+                RaftLogRecord::Action(RaftLogAction::Append(log_id, payload));
             self.append_and_apply(&record)?;
         }
         Ok(self.wal.last_segment())
@@ -95,7 +97,8 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             Some(log_id)
         };
 
-        let record = WALRecord::TruncateAfter(log_id);
+        let record =
+            RaftLogRecord::Action(RaftLogAction::TruncateAfter(log_id));
         self.append_and_apply(&record)
     }
 
@@ -114,7 +117,8 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             return Ok(self.wal.last_segment());
         }
 
-        let record = WALRecord::PurgeUpto(upto.clone());
+        let record =
+            RaftLogRecord::Action(RaftLogAction::PurgeUpto(upto.clone()));
         let res = self.append_and_apply(&record)?;
 
         // Buffer the chunk ids to remove.
@@ -139,7 +143,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     }
 
     fn commit(&mut self, log_id: T::LogId) -> Result<Segment, io::Error> {
-        let record = WALRecord::Commit(log_id);
+        let record = RaftLogRecord::Action(RaftLogAction::Commit(log_id));
         self.append_and_apply(&record)
     }
 
@@ -254,7 +258,7 @@ impl<T: Types> RaftLog<T> {
             OpenChunk::create(
                 config.clone(),
                 ChunkId(prev_end_offset.unwrap_or_default()),
-                WALRecord::State(sm.checkpoint()),
+                RaftLogRecord::Checkpoint(sm.checkpoint()),
             )?
         };
 
@@ -369,7 +373,7 @@ impl<T: Types> RaftLog<T> {
         &mut self,
         state: RaftLogState<T>,
     ) -> Result<Segment, io::Error> {
-        let record = WALRecord::State(state);
+        let record = RaftLogRecord::Checkpoint(state);
         self.append_and_apply(&record)
     }
 
@@ -495,7 +499,7 @@ impl<T: Types> RaftLog<T> {
 
     fn append_and_apply(
         &mut self,
-        rec: &WALRecord<T>,
+        rec: &RaftLogRecord<T>,
     ) -> Result<Segment, io::Error> {
         WAL::append(&mut self.wal, rec)?;
         StateMachine::apply(

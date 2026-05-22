@@ -6,6 +6,7 @@ use crate::Types;
 use crate::WALRecord;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::raft_log::log_data::LogData;
+use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 /// A struct that contains a snapshot of RaftLog data for inspection or
@@ -78,7 +79,9 @@ impl<T: Types> DumpRaftLogIter<'_, T> {
 
         let record = closed.chunk.read_record(segment)?;
 
-        if let WALRecord::Append(log_id, payload) = record {
+        if let WALRecord::Action(RaftLogAction::Append(log_id, payload)) =
+            record
+        {
             debug_assert_eq!(log_id, data.log_id);
             Ok(payload)
         } else {

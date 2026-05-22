@@ -21,6 +21,7 @@ use log::info;
 
 use crate::ChunkId;
 use crate::Config;
+use crate::RaftLogRecord;
 use crate::Types;
 use crate::WALRecord;
 use crate::api::state_machine::StateMachine;
@@ -28,6 +29,7 @@ use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
+use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::stat::FlushMetrics;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
@@ -239,7 +241,7 @@ where T: Types
         state_machine: &SM,
     ) -> Result<Option<SM::Checkpoint>, io::Error>
     where
-        SM: StateMachine<WALRecord<T>, Checkpoint = RaftLogState<T>>,
+        SM: StateMachine<RaftLogRecord<T>, Checkpoint = RaftLogState<T>>,
     {
         if !self.is_open_chunk_full() {
             return Ok(None);
@@ -261,7 +263,7 @@ where T: Types
             OpenChunk::create(
                 config,
                 chunk_id,
-                WALRecord::State(checkpoint.clone()),
+                RaftLogRecord::Checkpoint(checkpoint.clone()),
             )?
         };
 
@@ -326,7 +328,9 @@ where T: Types
             closed.chunk.read_record(segment)?
         };
 
-        if let WALRecord::Append(log_id, payload) = record {
+        if let WALRecord::Action(RaftLogAction::Append(log_id, payload)) =
+            record
+        {
             debug_assert_eq!(log_id, log_data.log_id);
             Ok(payload)
         } else {
@@ -335,10 +339,10 @@ where T: Types
     }
 }
 
-impl<T> WAL<WALRecord<T>> for RaftLogWAL<T>
+impl<T> WAL<RaftLogRecord<T>> for RaftLogWAL<T>
 where T: Types
 {
-    fn append(&mut self, rec: &WALRecord<T>) -> Result<(), io::Error> {
+    fn append(&mut self, rec: &RaftLogRecord<T>) -> Result<(), io::Error> {
         self.open.append_record(rec)?;
         Ok(())
     }

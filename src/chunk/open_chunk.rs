@@ -7,8 +7,8 @@ use codeq::Encode;
 
 use crate::ChunkId;
 use crate::Config;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::chunk::Chunk;
 use crate::types::Segment;
 
@@ -32,7 +32,7 @@ where T: Types
     pub(crate) fn create(
         config: Arc<Config>,
         chunk_id: ChunkId,
-        initial_record: WALRecord<T>,
+        initial_record: RaftLogRecord<T>,
     ) -> Result<Self, io::Error> {
         let path = config.chunk_path(chunk_id);
         let f = OpenOptions::new()
@@ -64,7 +64,7 @@ where T: Types
 
     pub(crate) fn append_record(
         &mut self,
-        rec: &WALRecord<T>,
+        rec: &RaftLogRecord<T>,
     ) -> Result<Segment, io::Error> {
         let size = rec.encode(&mut self.pending_data)?;
 

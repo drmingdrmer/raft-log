@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLog;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::chunk::Chunk;
 use crate::file_lock;
 use crate::raft_log::dump_api::DumpApi;
@@ -41,7 +41,7 @@ impl<T: Types> DumpApi<T> for Dump<T> {
     where D: FnMut(
             ChunkId,
             u64,
-            Result<(Segment, WALRecord<T>), io::Error>,
+            Result<(Segment, RaftLogRecord<T>), io::Error>,
         ) -> Result<(), io::Error> {
         let config = self.config.as_ref();
 
@@ -81,7 +81,7 @@ impl<T: Types> DumpApi<T> for RefDump<'_, T> {
     where D: FnMut(
             ChunkId,
             u64,
-            Result<(Segment, WALRecord<T>), Error>,
+            Result<(Segment, RaftLogRecord<T>), Error>,
         ) -> Result<(), Error> {
         let closed =
             self.raft_log.wal.closed.values().map(|c| c.chunk.chunk_id());

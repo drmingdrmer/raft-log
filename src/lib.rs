@@ -106,6 +106,8 @@ pub use self::raft_log::dump_api::DumpApi;
 pub use self::raft_log::dump_raft_log::DumpRaftLog;
 pub use self::raft_log::dump_raft_log::DumpRaftLogIter;
 pub use self::raft_log::raft_log::RaftLog;
+pub use self::raft_log::raft_log_action::RaftLogAction;
+pub use self::raft_log::raft_log_record::RaftLogRecord;
 pub use self::raft_log::wal::wal_record::WALRecord;
 pub use crate::types::Segment;
 

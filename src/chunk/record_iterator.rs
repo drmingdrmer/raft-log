@@ -5,8 +5,8 @@ use codeq::Decode;
 use codeq::error_context_ext::ErrorContextExt;
 
 use crate::ChunkId;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::offset_reader::OffsetReader;
 use crate::types::Segment;
 
@@ -39,7 +39,7 @@ where
     R: io::Read,
     T: Types,
 {
-    type Item = Result<(Segment, WALRecord<T>), io::Error>;
+    type Item = Result<(Segment, RaftLogRecord<T>), io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.error.is_some() {
@@ -51,7 +51,7 @@ where
             return None;
         }
 
-        let r = WALRecord::<T>::decode(&mut self.r);
+        let r = RaftLogRecord::<T>::decode(&mut self.r);
 
         let res = r
             .map(|r| {

@@ -29,8 +29,8 @@ use log::warn;
 use record_iterator::RecordIterator;
 
 use crate::Config;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::chunk::chunk_id::ChunkId;
 use crate::num::format_pad9_u64;
 use crate::types::Segment;
@@ -144,7 +144,7 @@ where T: Types
     pub(crate) fn open(
         config: Arc<Config>,
         chunk_id: ChunkId,
-    ) -> Result<(Self, Vec<WALRecord<T>>), io::Error> {
+    ) -> Result<(Self, Vec<RaftLogRecord<T>>), io::Error> {
         let f = Self::open_chunk_file(&config, chunk_id)?;
         let arc_f = Arc::new(f);
         let file_size = arc_f.metadata()?.len();
@@ -316,7 +316,7 @@ where T: Types
     pub(crate) fn dump(
         config: &Config,
         chunk_id: ChunkId,
-    ) -> Result<Vec<Result<(Segment, WALRecord<T>), io::Error>>, io::Error>
+    ) -> Result<Vec<Result<(Segment, RaftLogRecord<T>), io::Error>>, io::Error>
     {
         let f = Self::open_chunk_file(config, chunk_id)?;
         let it = Self::load_records_iter(config, Arc::new(f), chunk_id)?;
@@ -334,7 +334,7 @@ where T: Types
         f: Arc<File>,
         chunk_id: ChunkId,
     ) -> Result<
-        impl Iterator<Item = Result<(Segment, WALRecord<T>), io::Error>> + '_,
+        impl Iterator<Item = Result<(Segment, RaftLogRecord<T>), io::Error>> + '_,
         io::Error,
     > {
         let file_size = f
@@ -354,14 +354,14 @@ where T: Types
     pub(crate) fn read_record(
         &self,
         segment: Segment,
-    ) -> Result<WALRecord<T>, io::Error> {
+    ) -> Result<RaftLogRecord<T>, io::Error> {
         let offset = segment.offset().0 - self.global_start();
         let size = *segment.size() as usize;
 
         let mut buf = vec![0u8; size];
         self.f.read_exact_at(&mut buf, offset)?;
 
-        WALRecord::<T>::decode(&buf[..]).context(|| {
+        RaftLogRecord::<T>::decode(&buf[..]).context(|| {
             format!("decode Record {:?} in {}", segment, self.chunk_id())
         })
     }
