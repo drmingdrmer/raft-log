@@ -39,7 +39,7 @@ impl<T: Types> RaftLogStateMachine<T> {
     }
 }
 
-impl<T: Types> StateMachine<RaftLogRecord<T>> for RaftLogStateMachine<T> {
+impl<T: Types> StateMachine<RaftLogAction<T>> for RaftLogStateMachine<T> {
     type Error = RaftLogStateError<T>;
     type Checkpoint = RaftLogState<T>;
 

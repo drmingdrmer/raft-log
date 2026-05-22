@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 
 use crate::ChunkId;
+use crate::WALRecord;
 use crate::types::Segment;
 
 /// A trait representing a state machine of [`WAL`] that can apply records to
@@ -13,10 +14,10 @@ use crate::types::Segment;
 /// in the WAL to build and maintain application state.
 ///
 /// # Type Parameters
-/// * `R` - The type of records that can be applied to the state machine
+/// * `A` - The type of actions that can be applied to the state machine
 ///
 /// [`WAL`]: crate::api::wal::WAL
-pub trait StateMachine<R> {
+pub trait StateMachine<A> {
     /// The type of error that can occur during record application
     type Error: std::error::Error + Debug + 'static;
 
@@ -39,7 +40,7 @@ pub trait StateMachine<R> {
     ///   file.
     fn apply(
         &mut self,
-        record: &R,
+        record: &WALRecord<A, Self::Checkpoint>,
         chunk_id: ChunkId,
         global_segment: Segment,
     ) -> Result<(), Self::Error>;

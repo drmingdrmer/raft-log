@@ -241,7 +241,7 @@ where T: Types
         state_machine: &SM,
     ) -> Result<Option<SM::Checkpoint>, io::Error>
     where
-        SM: StateMachine<RaftLogRecord<T>, Checkpoint = RaftLogState<T>>,
+        SM: StateMachine<RaftLogAction<T>, Checkpoint = RaftLogState<T>>,
     {
         if !self.is_open_chunk_full() {
             return Ok(None);
