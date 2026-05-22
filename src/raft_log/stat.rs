@@ -15,9 +15,9 @@ pub struct Stat<T>
 where T: Types
 {
     /// Vector of statistics for closed (completed) chunks
-    pub closed_chunks: Vec<ChunkStat<T>>,
+    pub closed_chunks: Vec<ChunkStat<RaftLogState<T>>>,
     /// Statistics for the currently open (active) chunk
-    pub open_chunk: ChunkStat<T>,
+    pub open_chunk: ChunkStat<RaftLogState<T>>,
     /// The last evictable log id in the payload cache
     pub payload_cache_last_evictable: Option<T::LogId>,
     /// Current number of items in the payload cache
@@ -142,9 +142,7 @@ pub struct FlushLatencyPercentiles {
 
 /// Statistics about a single chunk in the Raft log
 #[derive(Debug, Clone)]
-pub struct ChunkStat<T>
-where T: Types
-{
+pub struct ChunkStat<C> {
     /// Unique identifier for this chunk
     pub chunk_id: ChunkId,
     /// Number of records stored in this chunk
@@ -155,12 +153,12 @@ where T: Types
     pub global_end: u64,
     /// Size of the chunk in bytes
     pub size: u64,
-    /// Current state of the Raft log for this chunk
-    pub log_state: RaftLogState<T>,
+    /// Checkpoint stored for this chunk.
+    pub log_state: C,
 }
 
-impl<T> fmt::Display for ChunkStat<T>
-where T: Types
+impl<C> fmt::Display for ChunkStat<C>
+where C: fmt::Debug
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(

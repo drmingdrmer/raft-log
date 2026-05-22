@@ -314,7 +314,10 @@ impl<T: Types> RaftLog<T> {
     /// Healthy means the data is complete and the chunk is not truncated.
     /// If reused, the closed chunk will be removed from `closed_chunks`
     fn reopen_last_closed(
-        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<T>>,
+        closed_chunks: &mut BTreeMap<
+            ChunkId,
+            ClosedChunk<RaftLogAction<T>, RaftLogState<T>>,
+        >,
     ) -> Option<OpenChunk<RaftLogRecord<T>>> {
         // If the chunk is truncated, it is not healthy, do not re-open it.
         {

@@ -1,28 +1,23 @@
-use crate::RaftLogRecord;
-use crate::Types;
+use crate::WALRecord;
 use crate::chunk::Chunk;
 use crate::raft_log::stat::ChunkStat;
-use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 #[derive(Debug, Clone)]
-pub(crate) struct ClosedChunk<T>
-where T: Types
-{
-    pub(crate) state: RaftLogState<T>,
-    pub(crate) chunk: Chunk<RaftLogRecord<T>>,
+pub(crate) struct ClosedChunk<A, C> {
+    pub(crate) state: C,
+    pub(crate) chunk: Chunk<WALRecord<A, C>>,
 }
 
-impl<T> ClosedChunk<T>
-where T: Types
-{
-    pub(crate) fn new(
-        chunk: Chunk<RaftLogRecord<T>>,
-        state: RaftLogState<T>,
-    ) -> Self {
+impl<A, C> ClosedChunk<A, C> {
+    pub(crate) fn new(chunk: Chunk<WALRecord<A, C>>, state: C) -> Self {
         Self { state, chunk }
     }
+}
 
-    pub(crate) fn stat(&self) -> ChunkStat<T> {
+impl<A, C> ClosedChunk<A, C>
+where C: Clone
+{
+    pub(crate) fn stat(&self) -> ChunkStat<C> {
         ChunkStat {
             chunk_id: self.chunk.chunk_id(),
             records_count: self.chunk.records_count() as u64,

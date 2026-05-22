@@ -53,7 +53,8 @@ where T: Types
 {
     pub(crate) config: Arc<Config>,
     pub(crate) open: OpenChunk<RaftLogRecord<T>>,
-    pub(crate) closed: BTreeMap<ChunkId, ClosedChunk<T>>,
+    pub(crate) closed:
+        BTreeMap<ChunkId, ClosedChunk<RaftLogAction<T>, RaftLogState<T>>>,
 
     flush_tx: SyncSender<SeqRequest<T>>,
 
@@ -81,7 +82,10 @@ where T: Types
     /// * `cache` - Cache for storing log payloads
     pub(crate) fn new(
         config: Arc<Config>,
-        closed: BTreeMap<ChunkId, ClosedChunk<T>>,
+        closed: BTreeMap<
+            ChunkId,
+            ClosedChunk<RaftLogAction<T>, RaftLogState<T>>,
+        >,
         open: OpenChunk<RaftLogRecord<T>>,
         cache: Arc<RwLock<PayloadCache<T>>>,
     ) -> Self {
