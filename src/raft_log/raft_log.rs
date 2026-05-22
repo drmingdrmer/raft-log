@@ -247,7 +247,10 @@ impl<T: Types> RaftLog<T> {
             let checkpoint = sm.checkpoint();
             last_log_id = checkpoint.last().cloned();
 
-            closed.insert(chunk_id, ClosedChunk::new(chunk, checkpoint));
+            closed.insert(
+                chunk_id,
+                ClosedChunk::new(chunk, Arc::new(checkpoint)),
+            );
         }
 
         let open = Self::reopen_last_closed(&mut closed);

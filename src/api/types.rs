@@ -39,7 +39,7 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
     /// cluster have voted for this candidate in this term.
     ///
     /// In some raft implementation the vote is called `hard state`
-    type Vote: Debug + Clone + PartialOrd + Eq + Codec + 'static;
+    type Vote: Debug + Clone + PartialOrd + Eq + Codec + Send + Sync + 'static;
 
     /// Callback handlers for notification of an IO operation.
     type Callback: Callback + Send + 'static;
@@ -49,7 +49,7 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
     /// This data is not used by the Raft-log implementation, but it can be used
     /// by the user. For example, an application could attach a
     /// configuration or the node info in this field.
-    type UserData: Debug + Clone + Eq + Codec + 'static;
+    type UserData: Debug + Clone + Eq + Codec + Send + Sync + 'static;
 
     /// Get the log index from the log id.
     fn log_index(log_id: &Self::LogId) -> u64;

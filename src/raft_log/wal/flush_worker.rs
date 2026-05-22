@@ -19,6 +19,7 @@ use log::info;
 use crate::ChunkId;
 use crate::Types;
 use crate::raft_log::state_machine::payload_cache::PayloadCache;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::atomic_flush_metrics::AtomicFlushMetrics;
 use crate::raft_log::wal::batch_metrics::BatchMetrics;
 use crate::raft_log::wal::callback::Callback;
@@ -27,43 +28,40 @@ use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WorkerRequest;
 use crate::raft_log::wal::queued_write::QueuedWrite;
 
-pub(crate) struct FileEntry<T: Types> {
+pub(crate) struct FileEntry<Chkp> {
     pub(crate) starting_offset: u64,
     pub(crate) f: Arc<File>,
 
-    /// The first log id in this file, also the last log id in the previous
-    /// chunk file.
-    pub(crate) prev_last_log_id: Option<T::LogId>,
+    /// Checkpoint of the previous chunk file.
+    pub(crate) prev_checkpoint: Option<Arc<Chkp>>,
     /// for debug
     pub(crate) sync_id: u64,
 }
 
-impl<T> fmt::Display for FileEntry<T>
-where T: Types
+impl<Chkp> fmt::Display for FileEntry<Chkp>
+where Chkp: fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "FileEntry{{ starting_offset: {}, prev_last_log_id: {:?} sync_id: {} }}",
+            "FileEntry{{ starting_offset: {}, prev_checkpoint: {:?} sync_id: {} }}",
             ChunkId(self.starting_offset),
-            self.prev_last_log_id,
+            self.prev_checkpoint,
             self.sync_id
         )
     }
 }
 
-impl<T: Types> FileEntry<T> {
-    /// `last_log_id`: the last log id in the previous chunk file. It is used to
-    /// set the cache eviction boundary.
+impl<Chkp> FileEntry<Chkp> {
     pub(crate) fn new(
         starting_offset: u64,
         f: Arc<File>,
-        prev_last_log_id: Option<T::LogId>,
+        prev_checkpoint: Option<Arc<Chkp>>,
     ) -> Self {
         Self {
             starting_offset,
             f,
-            prev_last_log_id,
+            prev_checkpoint,
             sync_id: 0,
         }
     }
@@ -110,7 +108,7 @@ impl<T: Types> WriteBatch<T> {
 
 pub(crate) struct FlushWorker<T: Types> {
     rx: Receiver<SeqRequest<T>>,
-    files: Vec<FileEntry<T>>,
+    files: Vec<FileEntry<RaftLogState<T>>>,
     cache: Arc<RwLock<PayloadCache<T>>>,
     metrics: Arc<AtomicFlushMetrics>,
     flush_batch_wait: Duration,
@@ -137,7 +135,7 @@ impl<T: Types> FlushWorker<T> {
 
     pub(crate) fn new(
         rx: Receiver<SeqRequest<T>>,
-        file_entry: FileEntry<T>,
+        file_entry: FileEntry<RaftLogState<T>>,
         cache: Arc<RwLock<PayloadCache<T>>>,
         done_seq: Arc<AtomicU64>,
         metrics: Arc<AtomicFlushMetrics>,
@@ -349,8 +347,10 @@ impl<T: Types> FlushWorker<T> {
         let f = &mut files[0];
 
         {
+            let last_log_id =
+                f.prev_checkpoint.as_ref().and_then(|s| s.last().cloned());
             let mut cache = self.cache.write().unwrap();
-            cache.set_last_evictable(f.prev_last_log_id.clone());
+            cache.set_last_evictable(last_log_id);
         }
 
         files[0].f.sync_data()?;

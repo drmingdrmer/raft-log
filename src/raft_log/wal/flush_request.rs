@@ -2,6 +2,7 @@ use std::sync::mpsc::SyncSender;
 use std::time::Instant;
 
 use crate::Types;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::flush_worker::FileEntry;
 
 /// A `WorkerRequest` tagged with a monotonically increasing sequence number.
@@ -40,7 +41,7 @@ impl FlushStat {
 
 pub(crate) enum WorkerRequest<T: Types> {
     /// Append a new file that will be need to be sync.
-    AppendFile(FileEntry<T>),
+    AppendFile(FileEntry<RaftLogState<T>>),
 
     /// Remove chunks that have been purged.
     ///

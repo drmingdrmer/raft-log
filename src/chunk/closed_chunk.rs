@@ -1,15 +1,20 @@
+use std::sync::Arc;
+
 use crate::WALRecord;
 use crate::chunk::Chunk;
 use crate::raft_log::stat::ChunkStat;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ClosedChunk<Act, Chkp> {
-    pub(crate) state: Chkp,
+    pub(crate) state: Arc<Chkp>,
     pub(crate) chunk: Chunk<WALRecord<Act, Chkp>>,
 }
 
 impl<Act, Chkp> ClosedChunk<Act, Chkp> {
-    pub(crate) fn new(chunk: Chunk<WALRecord<Act, Chkp>>, state: Chkp) -> Self {
+    pub(crate) fn new(
+        chunk: Chunk<WALRecord<Act, Chkp>>,
+        state: Arc<Chkp>,
+    ) -> Self {
         Self { state, chunk }
     }
 }
@@ -24,7 +29,7 @@ where Chkp: Clone
             global_start: self.chunk.global_start(),
             global_end: self.chunk.global_end(),
             size: self.chunk.chunk_size(),
-            log_state: self.state.clone(),
+            log_state: self.state.as_ref().clone(),
         }
     }
 }

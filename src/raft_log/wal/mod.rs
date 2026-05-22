@@ -89,16 +89,13 @@ where T: Types
         open: OpenChunk<RaftLogRecord<T>>,
         cache: Arc<RwLock<PayloadCache<T>>>,
     ) -> Self {
-        let last_closed_chunk_state =
+        let prev_checkpoint =
             closed.iter().last().map(|(_, c)| c.state.clone());
-
-        let prev_last_log_id =
-            last_closed_chunk_state.and_then(|s| s.last().cloned());
 
         let offset = open.chunk.global_start();
         let f = open.chunk.f.clone();
 
-        let file_entry = FileEntry::new(offset, f, prev_last_log_id);
+        let file_entry = FileEntry::new(offset, f, prev_checkpoint);
 
         let done_seq = Arc::new(AtomicU64::new(0));
         let flush_metrics = Arc::new(AtomicFlushMetrics::default());
@@ -283,17 +280,19 @@ where T: Types
             }))?;
         }
 
+        let checkpoint = Arc::new(checkpoint);
+
         self.send_request(WorkerRequest::AppendFile(FileEntry::new(
             offset.0,
             self.open.chunk.f.clone(),
-            checkpoint.last().cloned(),
+            Some(checkpoint.clone()),
         )))?;
 
         let chunk = old_open.chunk;
         let closed_id = chunk.chunk_id();
         let closed = ClosedChunk::new(chunk, checkpoint.clone());
         self.closed.insert(closed_id, closed);
-        Ok(Some(checkpoint))
+        Ok(Some(checkpoint.as_ref().clone()))
     }
 
     /// Loads the payload for a given log entry.
