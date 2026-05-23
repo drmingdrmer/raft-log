@@ -40,7 +40,7 @@ use crate::types::Segment;
 /// - Global offsets for all records it contains
 /// - Metadata about its position in the complete log
 #[derive(Debug, Clone)]
-pub struct Chunk<R> {
+pub struct Chunk<Rec> {
     /// File handle for the chunk's persistent storage
     pub(crate) f: Arc<File>,
 
@@ -60,10 +60,10 @@ pub struct Chunk<R> {
     #[allow(dead_code)]
     pub(crate) truncated: Option<u64>,
 
-    pub(crate) _p: PhantomData<R>,
+    pub(crate) _p: PhantomData<Rec>,
 }
 
-impl<R> Chunk<R> {
+impl<Rec> Chunk<Rec> {
     /// Returns the number of records stored in this chunk.
     pub(crate) fn records_count(&self) -> usize {
         self.global_offsets.len() - 1
@@ -130,8 +130,8 @@ impl<R> Chunk<R> {
     }
 }
 
-impl<R> Chunk<R>
-where R: Decode + 'static
+impl<Rec> Chunk<Rec>
+where Rec: Decode + 'static
 {
     /// Opens a chunk and loads its records.
     ///
@@ -142,7 +142,7 @@ where R: Decode + 'static
     pub(crate) fn open(
         config: Arc<Config>,
         chunk_id: ChunkId,
-    ) -> Result<(Self, Vec<R>), io::Error> {
+    ) -> Result<(Self, Vec<Rec>), io::Error> {
         let f = Self::open_chunk_file(&config, chunk_id)?;
         let arc_f = Arc::new(f);
         let file_size = arc_f.metadata()?.len();
@@ -314,7 +314,7 @@ where R: Decode + 'static
     pub(crate) fn dump(
         config: &Config,
         chunk_id: ChunkId,
-    ) -> Result<Vec<Result<(Segment, R), io::Error>>, io::Error> {
+    ) -> Result<Vec<Result<(Segment, Rec), io::Error>>, io::Error> {
         let f = Self::open_chunk_file(config, chunk_id)?;
         let it = Self::load_records_iter(config, Arc::new(f), chunk_id)?;
 
@@ -331,7 +331,7 @@ where R: Decode + 'static
         f: Arc<File>,
         chunk_id: ChunkId,
     ) -> Result<
-        impl Iterator<Item = Result<(Segment, R), io::Error>> + '_,
+        impl Iterator<Item = Result<(Segment, Rec), io::Error>> + '_,
         io::Error,
     > {
         let file_size = f
@@ -348,14 +348,17 @@ where R: Decode + 'static
     /// Uses `pread` (positional read) to atomically read from a specific offset
     /// without changing the file position. This avoids race conditions when
     /// multiple threads read from the same chunk concurrently.
-    pub(crate) fn read_record(&self, segment: Segment) -> Result<R, io::Error> {
+    pub(crate) fn read_record(
+        &self,
+        segment: Segment,
+    ) -> Result<Rec, io::Error> {
         let offset = segment.offset().0 - self.global_start();
         let size = *segment.size() as usize;
 
         let mut buf = vec![0u8; size];
         self.f.read_exact_at(&mut buf, offset)?;
 
-        R::decode(&buf[..]).context(|| {
+        Rec::decode(&buf[..]).context(|| {
             format!("decode Record {:?} in {}", segment, self.chunk_id())
         })
     }

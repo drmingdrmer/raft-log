@@ -21,16 +21,16 @@ use crate::types::Segment;
 /// log before being applied to the state machine. This provides crash recovery
 /// and helps maintain data consistency.
 ///
-/// Type parameter `R` represents the record type that will be stored in the
+/// Type parameter `Rec` represents the record type that will be stored in the
 /// log.
-pub trait WAL<R> {
-    // type StateMachine: StateMachine<R>;
+pub trait WAL<Rec> {
+    // type StateMachine: StateMachine<Rec>;
 
     /// Appends a new record to the write-ahead log.
     ///
     /// This method provides durability by ensuring that records are written to
     /// persistent storage before returning.
-    fn append(&mut self, rec: &R) -> Result<(), io::Error>;
+    fn append(&mut self, rec: &Rec) -> Result<(), io::Error>;
 
     /// Returns the segment representing the last record in the write-ahead log.
     ///
