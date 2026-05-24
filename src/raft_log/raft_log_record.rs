@@ -1,33 +1,10 @@
-use std::fmt;
-use std::fmt::Formatter;
-
-use crate::Types;
 use crate::WALRecord;
-use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 /// Concrete WAL record used by `RaftLog`.
 ///
 /// Its codec intentionally keeps the v1 on-disk tags:
 /// action tags use `0..=4`, and checkpoint uses `5`.
 pub type RaftLogRecord<W> = WALRecord<W>;
-
-impl<T> fmt::Display for RaftLogRecord<T>
-where
-    T: Types,
-    T::Vote: fmt::Display,
-    T::LogId: fmt::Display,
-    T::LogPayload: fmt::Display,
-    RaftLogState<T>: fmt::Display,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            WALRecord::Action(action) => fmt::Display::fmt(action, f),
-            WALRecord::Checkpoint(checkpoint) => {
-                write!(f, "RaftLogState({})", checkpoint)
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -38,8 +15,8 @@ mod tests {
     use codeq::testing::test_codec;
     use display_more::DisplaySliceExt;
 
+    use crate::WALRecord;
     use crate::raft_log::raft_log_action::RaftLogAction;
-    use crate::raft_log::raft_log_record::RaftLogRecord;
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
     use crate::testing::TestDisplayTypes;
     use crate::testing::TestTypes;
@@ -48,7 +25,7 @@ mod tests {
     #[test]
     fn test_record_codec_vote() -> Result<(), io::Error> {
         let rec =
-            RaftLogRecord::<TestTypes>::Action(RaftLogAction::SaveVote((1, 2)));
+            WALRecord::<TestTypes>::Action(RaftLogAction::SaveVote((1, 2)));
 
         let b = vec![
             0, 0, 0, 0, // typ
@@ -62,7 +39,7 @@ mod tests {
 
     #[test]
     fn test_record_codec_append() -> Result<(), io::Error> {
-        let rec = RaftLogRecord::<TestTypes>::Action(RaftLogAction::Append(
+        let rec = WALRecord::<TestTypes>::Action(RaftLogAction::Append(
             (1, 2),
             ss("hello"),
         ));
@@ -81,8 +58,7 @@ mod tests {
 
     #[test]
     fn test_record_codec_commit() -> Result<(), io::Error> {
-        let rec =
-            RaftLogRecord::<TestTypes>::Action(RaftLogAction::Commit((1, 2)));
+        let rec = WALRecord::<TestTypes>::Action(RaftLogAction::Commit((1, 2)));
 
         let b = vec![
             0, 0, 0, 2, // typ
@@ -96,9 +72,9 @@ mod tests {
 
     #[test]
     fn test_record_codec_truncate_after() -> Result<(), io::Error> {
-        let rec = RaftLogRecord::<TestTypes>::Action(
-            RaftLogAction::TruncateAfter(Some((1, 2))),
-        );
+        let rec = WALRecord::<TestTypes>::Action(RaftLogAction::TruncateAfter(
+            Some((1, 2)),
+        ));
 
         let b = vec![
             0, 0, 0, 3, // typ
@@ -113,9 +89,8 @@ mod tests {
 
     #[test]
     fn test_record_codec_purge_upto() -> Result<(), io::Error> {
-        let rec = RaftLogRecord::<TestTypes>::Action(RaftLogAction::PurgeUpto(
-            (1, 2),
-        ));
+        let rec =
+            WALRecord::<TestTypes>::Action(RaftLogAction::PurgeUpto((1, 2)));
 
         let b = vec![
             0, 0, 0, 4, // typ
@@ -129,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_record_codec_state() -> Result<(), io::Error> {
-        let rec = RaftLogRecord::<TestTypes>::Checkpoint(RaftLogState {
+        let rec = WALRecord::<TestTypes>::Checkpoint(RaftLogState {
             vote: Some((1, 2)),
             last: Some((2, 3)),
             committed: Some((4, 5)),
@@ -164,19 +139,18 @@ mod tests {
     #[test]
     fn test_decode_action_does_not_consume_next_record() -> Result<(), io::Error>
     {
-        let record_1 = RaftLogRecord::<TestTypes>::Action(
-            RaftLogAction::TruncateAfter(None),
-        );
+        let record_1 =
+            WALRecord::<TestTypes>::Action(RaftLogAction::TruncateAfter(None));
         let record_2 =
-            RaftLogRecord::<TestTypes>::Action(RaftLogAction::Commit((3, 4)));
+            WALRecord::<TestTypes>::Action(RaftLogAction::Commit((3, 4)));
 
         let mut b = Vec::new();
         record_1.encode(&mut b)?;
         record_2.encode(&mut b)?;
 
         let mut r = &b[..];
-        assert_eq!(record_1, RaftLogRecord::<TestTypes>::decode(&mut r)?);
-        assert_eq!(record_2, RaftLogRecord::<TestTypes>::decode(&mut r)?);
+        assert_eq!(record_1, WALRecord::<TestTypes>::decode(&mut r)?);
+        assert_eq!(record_2, WALRecord::<TestTypes>::decode(&mut r)?);
         assert_eq!(&[] as &[u8], r);
 
         Ok(())
@@ -185,23 +159,19 @@ mod tests {
     #[test]
     fn test_wal_record_display() {
         let records = [
-            RaftLogRecord::<TestDisplayTypes>::Action(RaftLogAction::SaveVote(
-                1,
-            )),
-            RaftLogRecord::<TestDisplayTypes>::Action(RaftLogAction::Append(
+            WALRecord::<TestDisplayTypes>::Action(RaftLogAction::SaveVote(1)),
+            WALRecord::<TestDisplayTypes>::Action(RaftLogAction::Append(
                 3u64,
                 "hello".to_string(),
             )),
-            RaftLogRecord::<TestDisplayTypes>::Action(RaftLogAction::Commit(
-                5u64,
-            )),
-            RaftLogRecord::<TestDisplayTypes>::Action(
+            WALRecord::<TestDisplayTypes>::Action(RaftLogAction::Commit(5u64)),
+            WALRecord::<TestDisplayTypes>::Action(
                 RaftLogAction::TruncateAfter(Some(7u64)),
             ),
-            RaftLogRecord::<TestDisplayTypes>::Action(
-                RaftLogAction::PurgeUpto(9u64),
-            ),
-            RaftLogRecord::<TestDisplayTypes>::Checkpoint(RaftLogState {
+            WALRecord::<TestDisplayTypes>::Action(RaftLogAction::PurgeUpto(
+                9u64,
+            )),
+            WALRecord::<TestDisplayTypes>::Checkpoint(RaftLogState {
                 vote: Some(1),
                 last: Some(3),
                 committed: Some(4),
@@ -212,7 +182,7 @@ mod tests {
 
         let got = format!("{}", records.display_n(1000));
 
-        let want = "[SaveVote(1),Append(log_id: 3, payload: hello),Commit(5),TruncateAfter(7),PurgeUpto(9),RaftLogState(RaftLogState(vote: 1, last: 3, committed: 4, purged: 6, user_data: hello))]";
+        let want = "[SaveVote(1),Append(log_id: 3, payload: hello),Commit(5),TruncateAfter(7),PurgeUpto(9),Checkpoint(RaftLogState(vote: 1, last: 3, committed: 4, purged: 6, user_data: hello))]";
 
         assert_eq!(want, got);
     }
