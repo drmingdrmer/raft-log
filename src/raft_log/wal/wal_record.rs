@@ -9,6 +9,7 @@ use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 use codeq::config::CodeqConfig;
 
+use crate::WalTypes;
 use crate::types::Checksum;
 
 /// For historical reasons and compatibility, the WAL reserves record types
@@ -21,18 +22,18 @@ pub(crate) const CHECKPOINT_RECORD_TYPE: u32 = 5;
 /// The concrete action and checkpoint payloads are defined by the user of the
 /// WAL.
 #[derive(Clone, PartialEq, Eq)]
-pub enum WALRecord<Act, Chkp> {
+pub enum WALRecord<W>
+where W: WalTypes
+{
     /// A user-defined command.
-    Action(Act),
+    Action(W::Action),
 
     /// A state-machine checkpoint persisted by the WAL.
-    Checkpoint(Chkp),
+    Checkpoint(W::Checkpoint),
 }
 
-impl<Act, Chkp> fmt::Debug for WALRecord<Act, Chkp>
-where
-    Act: fmt::Debug,
-    Chkp: fmt::Debug,
+impl<W> fmt::Debug for WALRecord<W>
+where W: WalTypes
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -44,12 +45,10 @@ where
     }
 }
 
-impl<Act, Chkp> codeq::Encode for WALRecord<Act, Chkp>
-where
-    Act: codeq::Encode,
-    Chkp: codeq::Encode,
+impl<W> codeq::Encode for WALRecord<W>
+where W: WalTypes
 {
-    fn encode<W: io::Write>(&self, mut w: W) -> Result<usize, io::Error> {
+    fn encode<Wt: io::Write>(&self, mut w: Wt) -> Result<usize, io::Error> {
         match self {
             WALRecord::Action(action) => action.encode(&mut w),
             WALRecord::Checkpoint(checkpoint) => {
@@ -73,10 +72,8 @@ where
 /// The wrapper inspects the record type and replays it for the decoder.
 /// Checkpoint records reread the reserved checkpoint type so v1 checksum
 /// verification still covers the type and payload.
-impl<Act, Chkp> codeq::Decode for WALRecord<Act, Chkp>
-where
-    Act: codeq::Decode,
-    Chkp: codeq::Decode,
+impl<W> codeq::Decode for WALRecord<W>
+where W: WalTypes
 {
     fn decode<R: io::Read>(mut r: R) -> Result<Self, io::Error> {
         let mut type_bytes = [0; 4];
@@ -84,12 +81,12 @@ where
 
         if u32::from_be_bytes(type_bytes) != CHECKPOINT_RECORD_TYPE {
             let mut r = Cursor::new(type_bytes).chain(r);
-            return Ok(Self::Action(Act::decode(&mut r)?));
+            return Ok(Self::Action(W::Action::decode(&mut r)?));
         }
 
         let mut cr = Checksum::new_reader(Cursor::new(type_bytes).chain(r));
         cr.read_u32::<BigEndian>()?;
-        let rec = Self::Checkpoint(Chkp::decode(&mut cr)?);
+        let rec = Self::Checkpoint(W::Checkpoint::decode(&mut cr)?);
         cr.verify_checksum(|| "Record::decode()")?;
 
         Ok(rec)

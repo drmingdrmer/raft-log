@@ -93,6 +93,7 @@ pub mod dump_writer;
 pub mod errors;
 
 pub use api::types::Types;
+pub use api::wal_types::WalTypes;
 pub use chunk::chunk_id::ChunkId;
 pub use config::Config;
 pub use raft_log::stat::ChunkStat;

@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::Types;
+use crate::WalTypes;
 use crate::raft_log::wal::queued_write::QueuedWrite;
 
 #[derive(Debug, Default)]
@@ -28,11 +28,13 @@ impl BatchMetrics {
         }
     }
 
-    pub(crate) fn record_queued_write<T: Types>(
+    pub(crate) fn record_queued_write<W>(
         &mut self,
         batch_start: Instant,
-        w: &QueuedWrite<T>,
-    ) {
+        w: &QueuedWrite<W>,
+    ) where
+        W: WalTypes,
+    {
         let wait_us = duration_micros(batch_start.duration_since(w.queued_at));
         self.queued_wait_us += wait_us;
         self.queued_wait_max_us = self.queued_wait_max_us.max(wait_us);

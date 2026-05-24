@@ -1,14 +1,15 @@
 pub(crate) mod atomic_flush_metrics;
 pub(crate) mod batch_metrics;
 pub(crate) mod callback;
+pub(crate) mod file_persisted;
 pub(crate) mod flush_request;
 pub(crate) mod flush_worker;
 pub(crate) mod queued_write;
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io;
 use std::sync::Arc;
-use std::sync::RwLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::SyncSender;
@@ -24,6 +25,7 @@ use crate::Config;
 use crate::RaftLogRecord;
 use crate::Types;
 use crate::WALRecord;
+use crate::WalTypes;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
@@ -31,9 +33,8 @@ use crate::chunk::open_chunk::OpenChunk;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::stat::FlushMetrics;
-use crate::raft_log::state_machine::payload_cache::PayloadCache;
-use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::atomic_flush_metrics::AtomicFlushMetrics;
+use crate::raft_log::wal::file_persisted::ChunkPersistedCallback;
 use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WriteRequest;
 use crate::raft_log::wal::flush_worker::FileEntry;
@@ -42,21 +43,30 @@ use crate::types::Segment;
 
 pub(crate) mod wal_record;
 
+pub(crate) use crate::raft_log::wal::file_persisted::ChunkPersistedFn;
+
 /// Write-ahead log implementation for the Raft log.
 ///
 /// This WAL implementation manages both open and closed chunks of data.
 /// An open chunk is actively being written to, while closed chunks are
 /// immutable and may be used for reading historical data.
-#[derive(Debug)]
-pub(crate) struct RaftLogWAL<T>
-where T: Types
+pub(crate) struct RaftLogWAL<W>
+where W: WalTypes
 {
     pub(crate) config: Arc<Config>,
-    pub(crate) open: OpenChunk<RaftLogRecord<T>>,
-    pub(crate) closed:
-        BTreeMap<ChunkId, ClosedChunk<RaftLogAction<T>, RaftLogState<T>>>,
+    pub(crate) open: OpenChunk<RaftLogRecord<W>>,
+    pub(crate) closed: BTreeMap<ChunkId, ClosedChunk<W>>,
 
-    flush_tx: SyncSender<SeqRequest<T>>,
+    /// Sends user write operations to the flush worker.
+    ///
+    /// Each write operation may carry its own callback, defined by
+    /// `W::Callback`.
+    flush_tx: SyncSender<SeqRequest<W>>,
+
+    /// File-level callback invoked after fsync.
+    ///
+    /// This callback is called once for each synced chunk file.
+    on_chunk_persisted: ChunkPersistedFn<W>,
 
     /// The next sequence number to assign. Incremented on each `send_request`.
     /// Only accessed by the main thread, so a plain `u64` suffices.
@@ -69,8 +79,23 @@ where T: Types
     flush_metrics: Arc<AtomicFlushMetrics>,
 }
 
-impl<T> RaftLogWAL<T>
-where T: Types
+impl<W> fmt::Debug for RaftLogWAL<W>
+where W: WalTypes
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RaftLogWAL")
+            .field("config", &self.config)
+            .field("open", &self.open)
+            .field("closed", &self.closed)
+            .field("sent_seq", &self.sent_seq)
+            .field("done_seq", &self.done_seq)
+            .field("flush_metrics", &self.flush_metrics)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<W> RaftLogWAL<W>
+where W: WalTypes
 {
     /// Creates a new RaftLogWAL instance.
     ///
@@ -79,15 +104,12 @@ where T: Types
     /// * `config` - Configuration for the WAL
     /// * `closed` - Map of closed (immutable) chunks indexed by chunk ID
     /// * `open` - The currently active chunk that can be written to
-    /// * `cache` - Cache for storing log payloads
+    /// * `on_chunk_persisted` - Callback invoked after chunk data is persisted
     pub(crate) fn new(
         config: Arc<Config>,
-        closed: BTreeMap<
-            ChunkId,
-            ClosedChunk<RaftLogAction<T>, RaftLogState<T>>,
-        >,
-        open: OpenChunk<RaftLogRecord<T>>,
-        cache: Arc<RwLock<PayloadCache<T>>>,
+        closed: BTreeMap<ChunkId, ClosedChunk<W>>,
+        open: OpenChunk<WALRecord<W>>,
+        on_chunk_persisted: ChunkPersistedFn<W>,
     ) -> Self {
         let prev_checkpoint =
             closed.iter().last().map(|(_, c)| c.state.clone());
@@ -95,7 +117,14 @@ where T: Types
         let offset = open.chunk.global_start();
         let f = open.chunk.f.clone();
 
-        let file_entry = FileEntry::new(offset, f, prev_checkpoint);
+        let file_entry = FileEntry::new(
+            offset,
+            f,
+            ChunkPersistedCallback::new(
+                on_chunk_persisted.clone(),
+                prev_checkpoint,
+            ),
+        );
 
         let done_seq = Arc::new(AtomicU64::new(0));
         let flush_metrics = Arc::new(AtomicFlushMetrics::default());
@@ -104,7 +133,6 @@ where T: Types
         let worker = FlushWorker::new(
             rx,
             file_entry,
-            cache,
             done_seq.clone(),
             flush_metrics.clone(),
             config.flush_batch_wait(),
@@ -118,6 +146,7 @@ where T: Types
             open,
             closed,
             flush_tx,
+            on_chunk_persisted,
             sent_seq: 0,
             done_seq,
             flush_metrics,
@@ -126,7 +155,7 @@ where T: Types
 
     /// Wraps a `WorkerRequest` with an auto-incrementing seq and sends it to
     /// the FlushWorker.
-    fn send_request(&mut self, req: WorkerRequest<T>) -> Result<(), io::Error> {
+    fn send_request(&mut self, req: WorkerRequest<W>) -> Result<(), io::Error> {
         self.sent_seq += 1;
         self.flush_tx
             .send(SeqRequest {
@@ -165,7 +194,7 @@ where T: Types
     pub(crate) fn send_pending(
         &mut self,
         sync: bool,
-        callback: Option<T::Callback>,
+        callback: Option<W::Callback>,
     ) -> Result<(), io::Error> {
         let data = self.open.take_pending_data();
         self.send_request(WorkerRequest::Write(WriteRequest {
@@ -240,9 +269,9 @@ where T: Types
     pub(crate) fn try_close_full_chunk<SM>(
         &mut self,
         state_machine: &SM,
-    ) -> Result<Option<SM::Checkpoint>, io::Error>
+    ) -> Result<Option<W::Checkpoint>, io::Error>
     where
-        SM: StateMachine<RaftLogAction<T>, Checkpoint = RaftLogState<T>>,
+        SM: StateMachine<W>,
     {
         if !self.is_open_chunk_full() {
             return Ok(None);
@@ -285,7 +314,10 @@ where T: Types
         self.send_request(WorkerRequest::AppendFile(FileEntry::new(
             offset.0,
             self.open.chunk.f.clone(),
-            Some(checkpoint.clone()),
+            ChunkPersistedCallback::new(
+                self.on_chunk_persisted.clone(),
+                Some(checkpoint.clone()),
+            ),
         )))?;
 
         let chunk = old_open.chunk;
@@ -308,18 +340,15 @@ where T: Types
     /// # Errors
     ///
     /// Returns an IO error if the chunk is not found or reading fails
-    pub(crate) fn load_log_payload(
+    pub(crate) fn load_record(
         &self,
-        log_data: &LogData<T>,
-    ) -> Result<T::LogPayload, io::Error> {
-        let chunk_id = log_data.chunk_id;
-        let segment = log_data.record_segment;
-
-        // All logs in open chunk are cached.
-        // See: payload_cache.set_last_evictable()
+        chunk_id: &ChunkId,
+        segment: Segment,
+    ) -> Result<WALRecord<W>, io::Error> {
+        // All logs in the open chunk are served before this fallback.
 
         let record = {
-            let closed = self.closed.get(&chunk_id).ok_or_else(|| {
+            let closed = self.closed.get(chunk_id).ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,
                     format!(
@@ -330,6 +359,20 @@ where T: Types
             })?;
             closed.chunk.read_record(segment)?
         };
+
+        Ok(record)
+    }
+
+    pub(crate) fn load_log_payload(
+        &self,
+        log_data: &LogData<W>,
+    ) -> Result<W::LogPayload, io::Error>
+    where
+        W: Types,
+        W: WalTypes<Action = RaftLogAction<W>>,
+    {
+        let record =
+            self.load_record(&log_data.chunk_id, log_data.record_segment)?;
 
         if let WALRecord::Action(RaftLogAction::Append(log_id, payload)) =
             record

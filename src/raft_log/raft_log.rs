@@ -29,6 +29,7 @@ use crate::raft_log::stat::ChunkStat;
 use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::raft_log::wal::ChunkPersistedFn;
 use crate::raft_log::wal::RaftLogWAL;
 use crate::types::Segment;
 
@@ -244,7 +245,7 @@ impl<T: Types> RaftLog<T> {
             }
 
             prev_end_offset = Some(chunk.last_segment().end().0);
-            let checkpoint = sm.checkpoint();
+            let checkpoint: RaftLogState<T> = sm.checkpoint();
             last_log_id = checkpoint.last().cloned();
 
             closed.insert(
@@ -266,8 +267,20 @@ impl<T: Types> RaftLog<T> {
         };
 
         let cache = sm.payload_cache.clone();
+        let on_chunk_persisted: ChunkPersistedFn<T> =
+            Arc::new(move |_persisted, prev_chunk_checkpoint: Option<Arc<RaftLogState<T>>>| {
+                let Some(prev_chunk_checkpoint) = prev_chunk_checkpoint else {
+                    return;
+                };
 
-        let wal = RaftLogWAL::new(config.clone(), closed, open, cache);
+                cache
+                    .write()
+                    .unwrap()
+                    .set_last_evictable(prev_chunk_checkpoint.last().cloned());
+            });
+
+        let wal =
+            RaftLogWAL::new(config.clone(), closed, open, on_chunk_persisted);
 
         let s = Self {
             config,
@@ -317,10 +330,7 @@ impl<T: Types> RaftLog<T> {
     /// Healthy means the data is complete and the chunk is not truncated.
     /// If reused, the closed chunk will be removed from `closed_chunks`
     fn reopen_last_closed(
-        closed_chunks: &mut BTreeMap<
-            ChunkId,
-            ClosedChunk<RaftLogAction<T>, RaftLogState<T>>,
-        >,
+        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<T>>,
     ) -> Option<OpenChunk<RaftLogRecord<T>>> {
         // If the chunk is truncated, it is not healthy, do not re-open it.
         {

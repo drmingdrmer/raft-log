@@ -18,8 +18,7 @@ pub struct DumpRaftLog<T: Types> {
 
     pub(crate) logs: Vec<LogData<T>>,
     pub(crate) cache: BTreeMap<T::LogId, T::LogPayload>,
-    pub(crate) chunks:
-        BTreeMap<ChunkId, ClosedChunk<RaftLogAction<T>, RaftLogState<T>>>,
+    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<T>>,
 
     pub(crate) cache_hit: usize,
     pub(crate) cache_miss: usize,

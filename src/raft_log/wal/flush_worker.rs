@@ -5,7 +5,6 @@ use std::io::IoSlice;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
-use std::sync::RwLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
@@ -17,64 +16,85 @@ use log::debug;
 use log::info;
 
 use crate::ChunkId;
-use crate::Types;
-use crate::raft_log::state_machine::payload_cache::PayloadCache;
-use crate::raft_log::state_machine::raft_log_state::RaftLogState;
+use crate::WalTypes;
 use crate::raft_log::wal::atomic_flush_metrics::AtomicFlushMetrics;
 use crate::raft_log::wal::batch_metrics::BatchMetrics;
 use crate::raft_log::wal::callback::Callback;
+use crate::raft_log::wal::file_persisted::ChunkPersisted;
+use crate::raft_log::wal::file_persisted::ChunkPersistedCallback;
 use crate::raft_log::wal::flush_request::FlushStat;
 use crate::raft_log::wal::flush_request::SeqRequest;
 use crate::raft_log::wal::flush_request::WorkerRequest;
 use crate::raft_log::wal::queued_write::QueuedWrite;
 
-pub(crate) struct FileEntry<Chkp> {
+pub(crate) struct FileEntry<W>
+where W: WalTypes
+{
     pub(crate) starting_offset: u64,
     pub(crate) f: Arc<File>,
 
-    /// Checkpoint of the previous chunk file.
-    pub(crate) prev_checkpoint: Option<Arc<Chkp>>,
+    /// Called after this file has been successfully synced.
+    ///
+    /// Receives the file, its starting offset, and the synced offset.
+    /// The callback may be called multiple times.
+    pub(crate) on_persisted: ChunkPersistedCallback<W>,
     /// for debug
     pub(crate) sync_id: u64,
 }
 
-impl<Chkp> fmt::Display for FileEntry<Chkp>
-where Chkp: fmt::Debug
+impl<W> fmt::Display for FileEntry<W>
+where W: WalTypes
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "FileEntry{{ starting_offset: {}, prev_checkpoint: {:?} sync_id: {} }}",
+            "FileEntry{{ starting_offset: {}, sync_id: {} }}",
             ChunkId(self.starting_offset),
-            self.prev_checkpoint,
             self.sync_id
         )
     }
 }
 
-impl<Chkp> FileEntry<Chkp> {
+impl<W> fmt::Debug for FileEntry<W>
+where W: WalTypes
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileEntry")
+            .field("starting_offset", &ChunkId(self.starting_offset))
+            .field("sync_id", &self.sync_id)
+            .finish()
+    }
+}
+
+impl<W> FileEntry<W>
+where W: WalTypes
+{
     pub(crate) fn new(
         starting_offset: u64,
         f: Arc<File>,
-        prev_checkpoint: Option<Arc<Chkp>>,
+        on_persisted: ChunkPersistedCallback<W>,
     ) -> Self {
         Self {
             starting_offset,
             f,
-            prev_checkpoint,
+            on_persisted,
             sync_id: 0,
         }
     }
 }
 
-struct WriteBatch<T: Types> {
-    writes: Vec<QueuedWrite<T>>,
+struct WriteBatch<W>
+where W: WalTypes
+{
+    writes: Vec<QueuedWrite<W>>,
     max_seq: u64,
-    last_non_flush: Option<SeqRequest<T>>,
+    last_non_flush: Option<SeqRequest<W>>,
     max_size: usize,
 }
 
-impl<T: Types> WriteBatch<T> {
+impl<W> WriteBatch<W>
+where W: WalTypes
+{
     fn new(max_size: usize) -> Self {
         Self {
             writes: Vec::with_capacity(max_size),
@@ -84,7 +104,7 @@ impl<T: Types> WriteBatch<T> {
         }
     }
 
-    fn push_seq_request(&mut self, seq_req: SeqRequest<T>) -> bool {
+    fn push_seq_request(&mut self, seq_req: SeqRequest<W>) -> bool {
         let SeqRequest {
             seq,
             queued_at,
@@ -106,10 +126,11 @@ impl<T: Types> WriteBatch<T> {
     }
 }
 
-pub(crate) struct FlushWorker<T: Types> {
-    rx: Receiver<SeqRequest<T>>,
-    files: Vec<FileEntry<RaftLogState<T>>>,
-    cache: Arc<RwLock<PayloadCache<T>>>,
+pub(crate) struct FlushWorker<W>
+where W: WalTypes
+{
+    rx: Receiver<SeqRequest<W>>,
+    files: Vec<FileEntry<W>>,
     metrics: Arc<AtomicFlushMetrics>,
     flush_batch_wait: Duration,
     flush_batch_max_items: usize,
@@ -117,12 +138,14 @@ pub(crate) struct FlushWorker<T: Types> {
     ///
     /// Updated (with `Relaxed` ordering) after processing each request or
     /// batch. The main thread polls this to implement `wait_worker_idle()`.
-    /// `Relaxed` is sufficient because the actual data synchronization is
-    /// provided by the `RwLock` on `PayloadCache`.
+    /// `Relaxed` is sufficient because this value is only a progress counter;
+    /// request side effects provide their own synchronization.
     done_seq: Arc<AtomicU64>,
 }
 
-impl<T: Types> FlushWorker<T> {
+impl<W> FlushWorker<W>
+where W: WalTypes
+{
     /// When starting, there is at most one open chunk file that is not sync.
     pub(crate) fn spawn(self) {
         std::thread::Builder::new()
@@ -134,9 +157,8 @@ impl<T: Types> FlushWorker<T> {
     }
 
     pub(crate) fn new(
-        rx: Receiver<SeqRequest<T>>,
-        file_entry: FileEntry<RaftLogState<T>>,
-        cache: Arc<RwLock<PayloadCache<T>>>,
+        rx: Receiver<SeqRequest<W>>,
+        file_entry: FileEntry<W>,
         done_seq: Arc<AtomicU64>,
         metrics: Arc<AtomicFlushMetrics>,
         flush_batch_wait: Duration,
@@ -145,7 +167,6 @@ impl<T: Types> FlushWorker<T> {
         Self {
             rx,
             files: vec![file_entry],
-            cache,
             metrics,
             flush_batch_wait,
             flush_batch_max_items,
@@ -263,7 +284,7 @@ impl<T: Types> FlushWorker<T> {
         }
     }
 
-    fn collect_write_batch(&self, batch: &mut WriteBatch<T>) -> Duration {
+    fn collect_write_batch(&self, batch: &mut WriteBatch<W>) -> Duration {
         let loop_started_at = Instant::now();
         let loop_deadline = loop_started_at + self.flush_batch_wait;
 
@@ -293,7 +314,7 @@ impl<T: Types> FlushWorker<T> {
 
     fn handle_non_flush_request(
         &mut self,
-        req: WorkerRequest<T>,
+        req: WorkerRequest<W>,
     ) -> Result<(), io::Error> {
         match req {
             WorkerRequest::AppendFile(file_entry) => {
@@ -341,29 +362,26 @@ impl<T: Types> FlushWorker<T> {
             f.f.sync_data()?;
         }
 
-        // The second last and before are all closed,
-        // When sync-ed, the logs in the cache can be evicted
-
         let f = &mut files[0];
-
-        {
-            let last_log_id =
-                f.prev_checkpoint.as_ref().and_then(|s| s.last().cloned());
-            let mut cache = self.cache.write().unwrap();
-            cache.set_last_evictable(last_log_id);
-        }
-
-        files[0].f.sync_data()?;
-        files[0].sync_id = offset;
+        f.f.sync_data()?;
+        f.on_persisted.call(ChunkPersisted {
+            file: f.f.clone(),
+            starting_offset: f.starting_offset,
+            synced_offset: offset,
+        });
+        f.sync_id = offset;
 
         Ok(())
     }
 }
 
-fn write_batch_vectored<T: Types>(
+fn write_batch_vectored<W>(
     file: &mut &File,
-    writes: &[QueuedWrite<T>],
-) -> Result<(), io::Error> {
+    writes: &[QueuedWrite<W>],
+) -> Result<(), io::Error>
+where
+    W: WalTypes,
+{
     const MAX_VECTORED_WRITE_SLICES: usize = 1024;
 
     for chunk in writes.chunks(MAX_VECTORED_WRITE_SLICES) {

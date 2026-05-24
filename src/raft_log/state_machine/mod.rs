@@ -10,6 +10,7 @@ use crate::Config;
 use crate::RaftLogRecord;
 use crate::Types;
 use crate::WALRecord;
+use crate::WalTypes;
 use crate::api::state_machine::StateMachine;
 use crate::errors::RaftLogStateError;
 use crate::raft_log::log_data::LogData;
@@ -39,9 +40,8 @@ impl<T: Types> RaftLogStateMachine<T> {
     }
 }
 
-impl<T: Types> StateMachine<RaftLogAction<T>> for RaftLogStateMachine<T> {
+impl<T: Types> StateMachine<T> for RaftLogStateMachine<T> {
     type Error = RaftLogStateError<T>;
-    type Checkpoint = RaftLogState<T>;
 
     fn apply(
         &mut self,
@@ -84,7 +84,7 @@ impl<T: Types> StateMachine<RaftLogAction<T>> for RaftLogStateMachine<T> {
         self.log_state.apply(rec)
     }
 
-    fn checkpoint(&self) -> Self::Checkpoint {
+    fn checkpoint(&self) -> <T as WalTypes>::Checkpoint {
         self.log_state.clone()
     }
 }

@@ -8,6 +8,9 @@ use std::fmt::Debug;
 
 use codeq::Codec;
 
+use crate::RaftLogAction;
+use crate::WalTypes;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::raft_log::wal::callback::Callback;
 
 /// The `Types` trait defines the core type parameters used throughout the
@@ -42,7 +45,7 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
     type Vote: Debug + Clone + PartialOrd + Eq + Codec + Send + Sync + 'static;
 
     /// Callback handlers for notification of an IO operation.
-    type Callback: Callback + Send + 'static;
+    type Callback: Callback;
 
     /// Custom data that can be attached to Raft-log.
     ///
@@ -67,4 +70,12 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
             None => 0,
         }
     }
+}
+
+impl<T> WalTypes for T
+where T: Types
+{
+    type Action = RaftLogAction<T>;
+    type Checkpoint = RaftLogState<T>;
+    type Callback = T::Callback;
 }

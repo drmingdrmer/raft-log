@@ -5,7 +5,9 @@ use std::sync::mpsc::SyncSender;
 ///
 /// This trait defines a mechanism to send IO operation results back to the
 /// caller, typically used for asynchronous IO operations.
-pub trait Callback {
+pub trait Callback
+where Self: Send + 'static
+{
     /// Sends the result of a IO operation back to the caller.
     ///
     /// # Arguments

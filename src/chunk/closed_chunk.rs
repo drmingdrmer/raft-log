@@ -1,28 +1,33 @@
 use std::sync::Arc;
 
 use crate::WALRecord;
+use crate::WalTypes;
 use crate::chunk::Chunk;
 use crate::raft_log::stat::ChunkStat;
 
 #[derive(Debug, Clone)]
-pub(crate) struct ClosedChunk<Act, Chkp> {
-    pub(crate) state: Arc<Chkp>,
-    pub(crate) chunk: Chunk<WALRecord<Act, Chkp>>,
+pub(crate) struct ClosedChunk<W>
+where W: WalTypes
+{
+    pub(crate) state: Arc<W::Checkpoint>,
+    pub(crate) chunk: Chunk<WALRecord<W>>,
 }
 
-impl<Act, Chkp> ClosedChunk<Act, Chkp> {
+impl<W> ClosedChunk<W>
+where W: WalTypes
+{
     pub(crate) fn new(
-        chunk: Chunk<WALRecord<Act, Chkp>>,
-        state: Arc<Chkp>,
+        chunk: Chunk<WALRecord<W>>,
+        state: Arc<W::Checkpoint>,
     ) -> Self {
         Self { state, chunk }
     }
 }
 
-impl<Act, Chkp> ClosedChunk<Act, Chkp>
-where Chkp: Clone
+impl<W> ClosedChunk<W>
+where W: WalTypes
 {
-    pub(crate) fn stat(&self) -> ChunkStat<Chkp> {
+    pub(crate) fn stat(&self) -> ChunkStat<W::Checkpoint> {
         ChunkStat {
             chunk_id: self.chunk.chunk_id(),
             records_count: self.chunk.records_count() as u64,

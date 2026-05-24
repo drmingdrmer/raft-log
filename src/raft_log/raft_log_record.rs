@@ -3,14 +3,13 @@ use std::fmt::Formatter;
 
 use crate::Types;
 use crate::WALRecord;
-use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 /// Concrete WAL record used by `RaftLog`.
 ///
 /// Its codec intentionally keeps the v1 on-disk tags:
 /// action tags use `0..=4`, and checkpoint uses `5`.
-pub type RaftLogRecord<T> = WALRecord<RaftLogAction<T>, RaftLogState<T>>;
+pub type RaftLogRecord<W> = WALRecord<W>;
 
 impl<T> fmt::Display for RaftLogRecord<T>
 where
