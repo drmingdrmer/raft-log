@@ -23,15 +23,12 @@ use log::info;
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLogRecord;
-use crate::Types;
 use crate::WALRecord;
 use crate::WalTypes;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
 use crate::chunk::closed_chunk::ClosedChunk;
 use crate::chunk::open_chunk::OpenChunk;
-use crate::raft_log::log_data::LogData;
-use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::stat::FlushMetrics;
 use crate::raft_log::wal::atomic_flush_metrics::AtomicFlushMetrics;
 use crate::raft_log::wal::file_persisted::ChunkPersistedCallback;
@@ -362,33 +359,12 @@ where W: WalTypes
 
         Ok(record)
     }
-
-    pub(crate) fn load_log_payload(
-        &self,
-        log_data: &LogData<W>,
-    ) -> Result<W::LogPayload, io::Error>
-    where
-        W: Types,
-        W: WalTypes<Action = RaftLogAction<W>>,
-    {
-        let record =
-            self.load_record(&log_data.chunk_id, log_data.record_segment)?;
-
-        if let WALRecord::Action(RaftLogAction::Append(log_id, payload)) =
-            record
-        {
-            debug_assert_eq!(log_id, log_data.log_id);
-            Ok(payload)
-        } else {
-            panic!("Expect Record::Append but: {:?}", record);
-        }
-    }
 }
 
-impl<T> WAL<RaftLogRecord<T>> for RaftLogWAL<T>
-where T: Types
+impl<W> WAL<WALRecord<W>> for RaftLogWAL<W>
+where W: WalTypes
 {
-    fn append(&mut self, rec: &RaftLogRecord<T>) -> Result<(), io::Error> {
+    fn append(&mut self, rec: &RaftLogRecord<W>) -> Result<(), io::Error> {
         self.open.append_record(rec)?;
         Ok(())
     }

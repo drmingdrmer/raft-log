@@ -11,6 +11,7 @@ use crate::ChunkId;
 use crate::Config;
 use crate::RaftLogRecord;
 use crate::Types;
+use crate::WALRecord;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
@@ -414,7 +415,21 @@ impl<T: Types> RaftLog<T> {
                 payload
             } else {
                 self.access_stat.cache_miss.fetch_add(1, Ordering::Relaxed);
-                self.wal.load_log_payload(log_data)?
+
+                let record = self
+                    .wal
+                    .load_record(&log_data.chunk_id, log_data.record_segment)?;
+
+                if let WALRecord::Action(RaftLogAction::Append(
+                    log_id,
+                    payload,
+                )) = record
+                {
+                    debug_assert_eq!(log_id, log_data.log_id);
+                    payload
+                } else {
+                    panic!("Expect Record::Append but: {:?}", record);
+                }
             };
 
             Ok((log_id, payload))
