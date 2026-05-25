@@ -127,6 +127,18 @@ impl Config {
             .max(1)
     }
 
+    pub(crate) fn wal_config(&self) -> chunked_wal::Config {
+        chunked_wal::Config {
+            dir: self.dir.clone(),
+            read_buffer_size: self.read_buffer_size,
+            chunk_max_records: self.chunk_max_records,
+            chunk_max_size: self.chunk_max_size,
+            truncate_incomplete_record: self.truncate_incomplete_record,
+            flush_batch_wait: self.flush_batch_wait,
+            flush_batch_max_items: self.flush_batch_max_items,
+        }
+    }
+
     /// Returns the full path for a given chunk ID
     pub fn chunk_path(&self, chunk_id: ChunkId) -> String {
         let file_name = Self::chunk_file_name(chunk_id);

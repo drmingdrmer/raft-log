@@ -76,12 +76,10 @@
 //! rx.recv().unwrap().unwrap();
 //! ```
 
-mod chunk;
 mod config;
 
 pub(crate) mod file_lock;
 pub(crate) mod num;
-pub(crate) mod offset_reader;
 pub(crate) mod raft_log;
 pub(crate) mod testing;
 
@@ -92,15 +90,18 @@ pub mod api;
 pub mod dump_writer;
 pub mod errors;
 
+pub use api::types::RaftWalTypes;
 pub use api::types::Types;
-pub use api::wal_types::WalTypes;
-pub use chunk::chunk_id::ChunkId;
+pub use chunked_wal::Callback;
+pub use chunked_wal::ChunkId;
+pub use chunked_wal::ChunkStat;
+pub use chunked_wal::FlushLatencyPercentiles;
+pub use chunked_wal::FlushMetrics;
+pub use chunked_wal::StateMachine;
+pub use chunked_wal::WALRecord;
+pub use chunked_wal::WalTypes;
 pub use config::Config;
-pub use raft_log::stat::ChunkStat;
-pub use raft_log::stat::FlushLatencyPercentiles;
-pub use raft_log::stat::FlushMetrics;
 pub use raft_log::stat::Stat;
-pub use raft_log::wal::callback::Callback;
 
 pub use self::raft_log::dump::Dump;
 pub use self::raft_log::dump_api::DumpApi;
@@ -109,7 +110,6 @@ pub use self::raft_log::dump_raft_log::DumpRaftLogIter;
 pub use self::raft_log::raft_log::RaftLog;
 pub use self::raft_log::raft_log_action::RaftLogAction;
 pub use self::raft_log::raft_log_record::RaftLogRecord;
-pub use self::raft_log::wal::wal_record::WALRecord;
 pub use crate::types::Segment;
 
 #[cfg(test)]

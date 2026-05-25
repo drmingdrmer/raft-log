@@ -3,6 +3,7 @@ use std::sync::mpsc::sync_channel;
 use std::thread::sleep;
 use std::time::Duration;
 
+use chunked_wal::wal::FlushStat;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
@@ -10,7 +11,6 @@ use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::raft_log_writer::blocking_flush;
 use crate::raft_log::dump_api::DumpApi;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::raft_log::wal::FlushStat;
 use crate::testing::ss;
 use crate::tests::context::TestContext;
 use crate::tests::context::new_testing;

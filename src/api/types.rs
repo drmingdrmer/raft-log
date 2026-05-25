@@ -5,13 +5,14 @@
 //! such as log id, log payload, vote, callback, and user data.
 
 use std::fmt::Debug;
+use std::marker::PhantomData;
 
+use chunked_wal::Callback;
 use codeq::Codec;
 
 use crate::RaftLogAction;
 use crate::WalTypes;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::raft_log::wal::callback::Callback;
 
 /// The `Types` trait defines the core type parameters used throughout the
 /// Raft-log implementation.
@@ -72,7 +73,10 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
     }
 }
 
-impl<T> WalTypes for T
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RaftWalTypes<T>(PhantomData<T>);
+
+impl<T> WalTypes for RaftWalTypes<T>
 where T: Types
 {
     type Action = RaftLogAction<T>;

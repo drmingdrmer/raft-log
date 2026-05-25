@@ -5,13 +5,13 @@ use std::io;
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
+use chunked_wal::wal::wal_record::CHECKPOINT_RECORD_TYPE;
 use codeq::Decode;
 use codeq::Encode;
 use codeq::config::CodeqConfig;
 use display_more::DisplayOptionExt;
 
 use crate::Types;
-use crate::raft_log::wal::wal_record::CHECKPOINT_RECORD_TYPE;
 use crate::types::Checksum;
 
 /// Raft log commands stored in the WAL.

@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::io;
 
+use chunked_wal::ClosedChunk;
+
 use crate::ChunkId;
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
-use crate::chunk::closed_chunk::ClosedChunk;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
@@ -18,7 +20,7 @@ pub struct DumpRaftLog<T: Types> {
 
     pub(crate) logs: Vec<LogData<T>>,
     pub(crate) cache: BTreeMap<T::LogId, T::LogPayload>,
-    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<T>>,
+    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<RaftWalTypes<T>>>,
 
     pub(crate) cache_hit: usize,
     pub(crate) cache_miss: usize,
