@@ -128,10 +128,8 @@ fn test_version_read_compat(version: &str) -> Result<(), io::Error> {
 
     let version_data_dir = get_version_dir(version);
 
-    let config = Arc::new(Config {
-        dir: format!("{}/raft-log", version_data_dir),
-        ..Default::default()
-    });
+    let config =
+        Arc::new(Config::new(format!("{}/raft-log", version_data_dir)));
 
     let mut raft_log = RaftLog::<MyType>::open(config)?;
     let dump = dump_raft_log_data(&mut raft_log)?;
@@ -150,8 +148,11 @@ fn test_version_read_compat(version: &str) -> Result<(), io::Error> {
 
 fn create_raft_log(base_dir: &str) -> Result<(), io::Error> {
     let config = Arc::new(Config {
-        dir: format!("{}/raft-log", base_dir),
-        chunk_max_records: Some(5),
+        wal: chunked_wal::Config {
+            dir: format!("{}/raft-log", base_dir),
+            chunk_max_records: Some(5),
+            ..Default::default()
+        },
         ..Default::default()
     });
 

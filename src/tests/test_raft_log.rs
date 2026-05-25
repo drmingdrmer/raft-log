@@ -3,6 +3,7 @@ use std::sync::mpsc::sync_channel;
 use std::thread::sleep;
 use std::time::Duration;
 
+use chunked_wal::wal::FlushStat;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
@@ -10,7 +11,6 @@ use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::raft_log_writer::blocking_flush;
 use crate::raft_log::dump_api::DumpApi;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::raft_log::wal::FlushStat;
 use crate::testing::ss;
 use crate::tests::context::TestContext;
 use crate::tests::context::new_testing;
@@ -304,7 +304,7 @@ fn test_purge_reopen() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
 
     {
         let mut rl = ctx.new_raft_log()?;
@@ -380,7 +380,7 @@ fn test_purge_removes_chunks() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
 
     {
         let mut rl = ctx.new_raft_log()?;
@@ -426,7 +426,7 @@ fn test_purge_free_cache() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     config.log_cache_max_items = Some(100);
     config.log_cache_capacity = Some(10240);
 
@@ -453,7 +453,7 @@ fn test_read_with_cache() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     config.log_cache_max_items = Some(3);
 
     {
@@ -524,7 +524,7 @@ fn test_read_without_cache() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     config.log_cache_capacity = Some(0);
 
     {
@@ -617,7 +617,7 @@ fn test_read_does_not_affect_append() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     // Turn off log cache so that every read seeks.
     config.log_cache_capacity = Some(0);
 
@@ -651,7 +651,7 @@ fn test_sync() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
 
     {
         let mut rl = ctx.new_raft_log()?;
@@ -725,7 +725,7 @@ fn test_on_disk_size() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     config.log_cache_capacity = Some(0);
 
     {
@@ -741,7 +741,7 @@ fn test_update_state() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     config.log_cache_capacity = Some(0);
 
     {
@@ -787,8 +787,8 @@ fn test_open_new_chunk_size() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(10000);
-    config.chunk_max_size = Some(150);
+    config.wal.chunk_max_records = Some(10000);
+    config.wal.chunk_max_size = Some(150);
 
     {
         let mut rl = ctx.new_raft_log()?;
@@ -863,7 +863,7 @@ fn test_open_new_chunk_size() -> Result<(), io::Error> {
 fn test_flush_worker_tracks_new_chunk_file_after_rotation()
 -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
-    ctx.config.chunk_max_records = Some(5);
+    ctx.config.wal.chunk_max_records = Some(5);
 
     let mut rl = ctx.new_raft_log()?;
 
@@ -960,7 +960,7 @@ fn test_flush_without_sync_data_visible_after_reopen() -> Result<(), io::Error>
 fn test_flush_batch_wait_groups_adjacent_sync_flushes() -> Result<(), io::Error>
 {
     let mut ctx = TestContext::new()?;
-    ctx.config.flush_batch_wait = Some(Duration::from_millis(500));
+    ctx.config.wal.flush_batch_wait = Some(Duration::from_millis(500));
 
     let mut rl = ctx.new_raft_log()?;
 
@@ -989,8 +989,8 @@ fn test_flush_batch_wait_groups_adjacent_sync_flushes() -> Result<(), io::Error>
 #[test]
 fn test_flush_batch_max_items_limits_grouping() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
-    ctx.config.flush_batch_wait = Some(Duration::from_millis(500));
-    ctx.config.flush_batch_max_items = Some(1);
+    ctx.config.wal.flush_batch_wait = Some(Duration::from_millis(500));
+    ctx.config.wal.flush_batch_max_items = Some(1);
 
     let mut rl = ctx.new_raft_log()?;
 
@@ -1018,7 +1018,7 @@ fn test_stat() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     let config = &mut ctx.config;
 
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
 
     {
         let mut rl = ctx.new_raft_log()?;

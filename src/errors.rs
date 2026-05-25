@@ -1,8 +1,6 @@
-mod storage_errors;
-
 use std::io;
 
-pub use storage_errors::InvalidChunkFileName;
+pub use chunked_wal::errors::InvalidChunkFileName;
 
 use crate::api::types::Types;
 

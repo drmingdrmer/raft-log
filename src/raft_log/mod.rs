@@ -9,4 +9,3 @@ pub(crate) mod raft_log_action;
 pub(crate) mod raft_log_record;
 pub mod stat;
 pub(crate) mod state_machine;
-pub(crate) mod wal;

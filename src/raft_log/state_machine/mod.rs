@@ -8,6 +8,7 @@ use raft_log_state::RaftLogState;
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLogRecord;
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
 use crate::WalTypes;
@@ -40,7 +41,7 @@ impl<T: Types> RaftLogStateMachine<T> {
     }
 }
 
-impl<T: Types> StateMachine<T> for RaftLogStateMachine<T> {
+impl<T: Types> StateMachine<RaftWalTypes<T>> for RaftLogStateMachine<T> {
     type Error = RaftLogStateError<T>;
 
     fn apply(
@@ -84,7 +85,7 @@ impl<T: Types> StateMachine<T> for RaftLogStateMachine<T> {
         self.log_state.apply(rec)
     }
 
-    fn checkpoint(&self) -> <T as WalTypes>::Checkpoint {
+    fn checkpoint(&self) -> <RaftWalTypes<T> as WalTypes>::Checkpoint {
         self.log_state.clone()
     }
 }

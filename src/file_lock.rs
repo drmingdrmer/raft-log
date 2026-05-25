@@ -36,7 +36,7 @@ impl FileLock {
                     "Directory '{}' is already locked by another process, \
                     shutdown other process to continue; \
                     error:({})",
-                    config.dir, e
+                    config.wal.dir, e
                 ),
             )
         })?;
@@ -50,7 +50,7 @@ impl FileLock {
     }
 
     pub(crate) fn lock_path(config: &Config) -> String {
-        format!("{}/{}", config.dir, Self::LOCK_FILE_NAME)
+        format!("{}/{}", config.wal.dir, Self::LOCK_FILE_NAME)
     }
 }
 
@@ -77,10 +77,7 @@ mod tests {
         let p = temp_dir.path();
         let p = p.to_str().unwrap().to_string();
 
-        let config = Config {
-            dir: p,
-            ..Default::default()
-        };
+        let config = Config::new(p);
 
         let config = Arc::new(config);
 

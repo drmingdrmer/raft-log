@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::io;
 
+use chunked_wal::ClosedChunk;
+
 use crate::ChunkId;
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
-use crate::chunk::closed_chunk::ClosedChunk;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
@@ -18,7 +20,7 @@ pub struct DumpRaftLog<T: Types> {
 
     pub(crate) logs: Vec<LogData<T>>,
     pub(crate) cache: BTreeMap<T::LogId, T::LogPayload>,
-    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<T>>,
+    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<RaftWalTypes<T>>>,
 
     pub(crate) cache_hit: usize,
     pub(crate) cache_miss: usize,
@@ -133,7 +135,7 @@ mod tests {
         let mut ctx = TestContext::new()?;
         let config = &mut ctx.config;
 
-        config.chunk_max_records = Some(5);
+        config.wal.chunk_max_records = Some(5);
         config.log_cache_max_items = Some(3);
 
         let mut rl = ctx.new_raft_log()?;
@@ -176,7 +178,7 @@ mod tests {
     fn build_sample_data(
         rl: &mut RaftLog<TestTypes>,
     ) -> Result<String, io::Error> {
-        assert_eq!(rl.config.chunk_max_records, Some(5));
+        assert_eq!(rl.config.wal.chunk_max_records, Some(5));
 
         let logs = [
             //

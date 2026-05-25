@@ -2,12 +2,13 @@ use std::io;
 use std::io::Error;
 use std::sync::Arc;
 
+use chunked_wal::Chunk;
+
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLog;
 use crate::RaftLogRecord;
 use crate::Types;
-use crate::chunk::Chunk;
 use crate::file_lock;
 use crate::raft_log::dump_api::DumpApi;
 use crate::types::Segment;
@@ -47,7 +48,7 @@ impl<T: Types> DumpApi<T> for Dump<T> {
 
         let chunk_ids = RaftLog::<T>::load_chunk_ids(config)?;
         for chunk_id in chunk_ids {
-            let it = Chunk::<RaftLogRecord<T>>::dump(config, chunk_id)?;
+            let it = Chunk::<RaftLogRecord<T>>::dump(&config.wal, chunk_id)?;
             for (i, res) in it.into_iter().enumerate() {
                 write_record(chunk_id, i as u64, res)?;
             }
@@ -90,12 +91,12 @@ impl<T: Types> DumpApi<T> for RefDump<'_, T> {
 
         for chunk_id in chunk_ids {
             let f = Chunk::<RaftLogRecord<T>>::open_chunk_file(
-                self.config.as_ref(),
+                &self.config.wal,
                 chunk_id,
             )?;
 
             let it = Chunk::<RaftLogRecord<T>>::load_records_iter(
-                self.config.as_ref(),
+                &self.config.wal,
                 Arc::new(f),
                 chunk_id,
             )?;

@@ -48,12 +48,14 @@ fn test_bench_raft_log() -> Result<(), io::Error> {
     println!("{}", path);
 
     let config = Config {
-        dir: path.clone(),
+        wal: chunked_wal::Config {
+            dir: path.clone(),
+            chunk_max_records: Some(128 * 1024),
+            chunk_max_size: Some(256 * 1024 * 1024),
+            ..Default::default()
+        },
         log_cache_max_items: Some(1024 * 1024),
         log_cache_capacity: Some(1024 * 1024 * 1024),
-        chunk_max_records: Some(128 * 1024),
-        chunk_max_size: Some(256 * 1024 * 1024),
-        ..Default::default()
     };
 
     let config = Arc::new(config);

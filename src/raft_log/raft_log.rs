@@ -3,6 +3,12 @@ use std::io;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use chunked_wal::Chunk;
+use chunked_wal::ChunkPersistedFn;
+use chunked_wal::ChunkStat;
+use chunked_wal::ChunkedWal;
+use chunked_wal::ClosedChunk;
+use chunked_wal::OpenChunk;
 use codeq::OffsetSize;
 use codeq::error_context_ext::ErrorContextExt;
 use log::info;
@@ -10,14 +16,12 @@ use log::info;
 use crate::ChunkId;
 use crate::Config;
 use crate::RaftLogRecord;
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
-use crate::chunk::Chunk;
-use crate::chunk::closed_chunk::ClosedChunk;
-use crate::chunk::open_chunk::OpenChunk;
 use crate::errors::LogIndexNotFound;
 use crate::errors::RaftLogStateError;
 use crate::file_lock::FileLock;
@@ -26,12 +30,9 @@ use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
 use crate::raft_log::dump_raft_log::DumpRaftLog;
 use crate::raft_log::raft_log_action::RaftLogAction;
-use crate::raft_log::stat::ChunkStat;
 use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::raft_log::wal::ChunkPersistedFn;
-use crate::raft_log::wal::RaftLogWAL;
 use crate::types::Segment;
 
 /// RaftLog is a Write-Ahead-Log implementation for the Raft consensus protocol.
@@ -50,7 +51,7 @@ pub struct RaftLog<T: Types> {
     /// Acquire the dir exclusive lock when writing to the log.
     _dir_lock: FileLock,
 
-    pub(crate) wal: RaftLogWAL<T>,
+    pub(crate) wal: ChunkedWal<RaftWalTypes<T>>,
 
     pub(crate) state_machine: RaftLogStateMachine<T>,
 
@@ -133,7 +134,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
                 break;
             }
             let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();
-            let path = self.config.chunk_path(chunk_id);
+            let path = self.config.wal.chunk_path(chunk_id);
             info!(
                 "RaftLog: scheduled to remove chunk after next flush: {}",
                 path
@@ -219,7 +220,8 @@ impl<T: Types> RaftLog<T> {
     /// - WAL records are invalid
     pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
         let dir_lock = FileLock::new(config.clone())
-            .context(|| format!("open RaftLog in '{}'", config.dir))?;
+            .context(|| format!("open RaftLog in '{}'", config.wal.dir))?;
+        let wal_config = Arc::new(config.wal.clone());
 
         let chunk_ids = Self::load_chunk_ids(&config)?;
 
@@ -236,12 +238,11 @@ impl<T: Types> RaftLog<T> {
 
             Self::ensure_consecutive_chunks(prev_end_offset, chunk_id)?;
 
-            let (chunk, records) = Chunk::open(config.clone(), chunk_id)?;
+            let (chunk, records) =
+                Chunk::<RaftLogRecord<T>>::open(wal_config.clone(), chunk_id)?;
 
             for (i, record) in records.into_iter().enumerate() {
-                let start = chunk.global_offsets[i];
-                let end = chunk.global_offsets[i + 1];
-                let seg = Segment::new(start, end - start);
+                let seg = chunk.record_segment(i);
                 sm.apply(&record, chunk_id, seg)?;
             }
 
@@ -261,14 +262,14 @@ impl<T: Types> RaftLog<T> {
             open
         } else {
             OpenChunk::create(
-                config.clone(),
+                wal_config.clone(),
                 ChunkId(prev_end_offset.unwrap_or_default()),
                 RaftLogRecord::Checkpoint(sm.checkpoint()),
             )?
         };
 
         let cache = sm.payload_cache.clone();
-        let on_chunk_persisted: ChunkPersistedFn<T> =
+        let on_chunk_persisted: ChunkPersistedFn<RaftWalTypes<T>> =
             Arc::new(move |_persisted, prev_chunk_checkpoint: Option<Arc<RaftLogState<T>>>| {
                 let Some(prev_chunk_checkpoint) = prev_chunk_checkpoint else {
                     return;
@@ -280,8 +281,7 @@ impl<T: Types> RaftLog<T> {
                     .set_last_evictable(prev_chunk_checkpoint.last().cloned());
             });
 
-        let wal =
-            RaftLogWAL::new(config.clone(), closed, open, on_chunk_persisted);
+        let wal = ChunkedWal::new(wal_config, closed, open, on_chunk_persisted);
 
         let s = Self {
             config,
@@ -331,13 +331,13 @@ impl<T: Types> RaftLog<T> {
     /// Healthy means the data is complete and the chunk is not truncated.
     /// If reused, the closed chunk will be removed from `closed_chunks`
     fn reopen_last_closed(
-        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<T>>,
+        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<RaftWalTypes<T>>>,
     ) -> Option<OpenChunk<RaftLogRecord<T>>> {
         // If the chunk is truncated, it is not healthy, do not re-open it.
         {
             let (_chunk_id, closed) = closed_chunks.iter().last()?;
 
-            if closed.chunk.truncated.is_some() {
+            if closed.chunk.is_truncated() {
                 return None;
             }
         }
@@ -348,7 +348,7 @@ impl<T: Types> RaftLog<T> {
     }
 
     pub fn load_chunk_ids(config: &Config) -> Result<Vec<ChunkId>, io::Error> {
-        let path = &config.dir;
+        let path = &config.wal.dir;
         let entries = std::fs::read_dir(path)?;
         let mut chunk_ids = vec![];
         for entry in entries {
@@ -360,7 +360,7 @@ impl<T: Types> RaftLog<T> {
                 continue;
             }
 
-            let res = Config::parse_chunk_file_name(&fn_str);
+            let res = chunked_wal::Config::parse_chunk_file_name(&fn_str);
 
             match res {
                 Ok(offset) => {
