@@ -75,7 +75,6 @@
 
 mod config;
 
-pub(crate) mod file_lock;
 pub(crate) mod num;
 pub(crate) mod raft_log;
 pub(crate) mod testing;

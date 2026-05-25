@@ -18,16 +18,16 @@ use chunked_wal::Chunk;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
+use crate::api::raft_log_writer::blocking_flush;
+use crate::api::raft_log_writer::RaftLogWriter;
+use crate::testing::ss;
+use crate::testing::TestTypes;
+use crate::tests::context::TestContext;
+use crate::tests::sample_data;
 use crate::ChunkId;
 use crate::Dump;
 use crate::DumpApi;
 use crate::RaftLogRecord;
-use crate::api::raft_log_writer::RaftLogWriter;
-use crate::api::raft_log_writer::blocking_flush;
-use crate::testing::TestTypes;
-use crate::testing::ss;
-use crate::tests::context::TestContext;
-use crate::tests::sample_data;
 
 type TestChunk = Chunk<RaftLogRecord<TestTypes>>;
 
@@ -126,6 +126,28 @@ fn test_reopen() -> Result<(), io::Error> {
             "#},
             dump
         );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_reopen_restores_payload_cache_evictable_boundary(
+) -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    ctx.config.wal.chunk_max_records = Some(5);
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        sample_data::build_sample_data(&mut rl)?;
+    }
+
+    {
+        let rl = ctx.new_raft_log()?;
+        let stat = rl.stat();
+
+        assert_eq!(Some((2, 6)), stat.payload_cache_last_evictable);
+        assert_eq!(6, stat.payload_cache_item_count);
     }
 
     Ok(())

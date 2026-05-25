@@ -7,16 +7,18 @@ use chunked_wal::wal::FlushStat;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
-use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::raft_log_writer::blocking_flush;
+use crate::api::raft_log_writer::RaftLogWriter;
 use crate::raft_log::dump_api::DumpApi;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 use crate::testing::ss;
-use crate::tests::context::TestContext;
+use crate::testing::TestTypes;
 use crate::tests::context::new_testing;
+use crate::tests::context::TestContext;
 use crate::tests::sample_data;
 use crate::tests::sample_data::build_sample_data;
 use crate::types::Segment;
+use crate::Dump;
 
 #[test]
 fn test_save_user_data() -> Result<(), io::Error> {
@@ -58,6 +60,55 @@ fn test_save_vote() -> Result<(), io::Error> {
 
     let state = rl.log_state();
     assert_eq!(Some(vote), state.vote);
+
+    Ok(())
+}
+
+#[test]
+fn test_open_holds_wal_lock() -> Result<(), io::Error> {
+    let ctx = TestContext::new()?;
+    let rl = ctx.new_raft_log()?;
+
+    let err = match ctx.new_raft_log() {
+        Ok(_) => panic!("opening the same RaftLog twice must fail"),
+        Err(err) => err,
+    };
+    assert_eq!(io::ErrorKind::WouldBlock, err.kind());
+
+    drop(rl);
+
+    let _rl = ctx.new_raft_log()?;
+
+    Ok(())
+}
+
+#[test]
+fn test_dump_new_requires_wal_lock_but_ref_dump_does_not(
+) -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    ctx.config.wal.chunk_max_records = Some(5);
+
+    let expected = {
+        let mut rl = ctx.new_raft_log()?;
+        let expected = build_sample_data(&mut rl)?;
+
+        assert_eq!(expected, rl.dump().write_to_string()?);
+
+        let err = match Dump::<TestTypes>::new(ctx.arc_config()) {
+            Ok(_) => {
+                panic!("Dump::new must fail while RaftLog owns the WAL lock")
+            }
+            Err(err) => err,
+        };
+        assert_eq!(io::ErrorKind::WouldBlock, err.kind());
+
+        expected
+    };
+
+    assert_eq!(
+        expected,
+        Dump::<TestTypes>::new(ctx.arc_config())?.write_to_string()?
+    );
 
     Ok(())
 }
@@ -860,8 +911,8 @@ fn test_open_new_chunk_size() -> Result<(), io::Error> {
 }
 
 #[test]
-fn test_flush_worker_tracks_new_chunk_file_after_rotation()
--> Result<(), io::Error> {
+fn test_flush_worker_tracks_new_chunk_file_after_rotation(
+) -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     ctx.config.wal.chunk_max_records = Some(5);
 

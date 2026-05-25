@@ -61,3 +61,30 @@ impl Config {
         self.log_cache_capacity.unwrap_or(1024 * 1024 * 1024)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    #[test]
+    fn test_new_full_embeds_wal_config() {
+        let config = Config::new_full(
+            "raft-log-dir",
+            Some(7),
+            Some(11),
+            Some(13),
+            Some(17),
+            Some(19),
+        );
+
+        assert_eq!("raft-log-dir", config.wal.dir);
+        assert_eq!(Some(13), config.wal.read_buffer_size);
+        assert_eq!(Some(17), config.wal.chunk_max_records);
+        assert_eq!(Some(19), config.wal.chunk_max_size);
+        assert_eq!(None, config.wal.truncate_incomplete_record);
+        assert_eq!(None, config.wal.flush_batch_wait);
+        assert_eq!(None, config.wal.flush_batch_max_items);
+        assert_eq!(7, config.log_cache_max_items());
+        assert_eq!(11, config.log_cache_capacity());
+    }
+}

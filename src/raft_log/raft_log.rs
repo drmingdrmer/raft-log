@@ -1,19 +1,12 @@
-use std::collections::BTreeMap;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use chunked_wal::Chunk;
 use chunked_wal::ChunkPersistedFn;
 use chunked_wal::ChunkStat;
 use chunked_wal::ChunkedWal;
-use chunked_wal::ClosedChunk;
-use chunked_wal::OpenChunk;
-use codeq::OffsetSize;
-use codeq::error_context_ext::ErrorContextExt;
 use log::info;
 
-use crate::ChunkId;
 use crate::Config;
 use crate::RaftLogRecord;
 use crate::RaftWalTypes;
@@ -24,8 +17,6 @@ use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
 use crate::errors::LogIndexNotFound;
 use crate::errors::RaftLogStateError;
-use crate::file_lock::FileLock;
-use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
 use crate::raft_log::dump_raft_log::DumpRaftLog;
@@ -47,9 +38,6 @@ use crate::types::Segment;
 #[derive(Debug)]
 pub struct RaftLog<T: Types> {
     pub(crate) config: Arc<Config>,
-
-    /// Acquire the dir exclusive lock when writing to the log.
-    _dir_lock: FileLock,
 
     pub(crate) wal: ChunkedWal<RaftWalTypes<T>>,
 
@@ -219,55 +207,9 @@ impl<T: Types> RaftLog<T> {
     /// - There are gaps between chunk offsets
     /// - WAL records are invalid
     pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
-        let dir_lock = FileLock::new(config.clone())
-            .context(|| format!("open RaftLog in '{}'", config.wal.dir))?;
         let wal_config = Arc::new(config.wal.clone());
 
-        let chunk_ids = Self::load_chunk_ids(&config)?;
-
         let mut sm = RaftLogStateMachine::new(&config);
-        let mut closed = BTreeMap::new();
-        let mut prev_end_offset = None;
-        let mut last_log_id = None;
-
-        for chunk_id in chunk_ids.iter().copied() {
-            // Only the last chunk(open chunk) needs to keep all log payload in
-            // cache. Therefore, payloads in previous chunks are marked as
-            // evictable.
-            sm.payload_cache.write().unwrap().set_last_evictable(last_log_id);
-
-            Self::ensure_consecutive_chunks(prev_end_offset, chunk_id)?;
-
-            let (chunk, records) =
-                Chunk::<RaftLogRecord<T>>::open(wal_config.clone(), chunk_id)?;
-
-            for (i, record) in records.into_iter().enumerate() {
-                let seg = chunk.record_segment(i);
-                sm.apply(&record, chunk_id, seg)?;
-            }
-
-            prev_end_offset = Some(chunk.last_segment().end().0);
-            let checkpoint: RaftLogState<T> = sm.checkpoint();
-            last_log_id = checkpoint.last().cloned();
-
-            closed.insert(
-                chunk_id,
-                ClosedChunk::new(chunk, Arc::new(checkpoint)),
-            );
-        }
-
-        let open = Self::reopen_last_closed(&mut closed);
-
-        let open = if let Some(open) = open {
-            open
-        } else {
-            OpenChunk::create(
-                wal_config.clone(),
-                ChunkId(prev_end_offset.unwrap_or_default()),
-                RaftLogRecord::Checkpoint(sm.checkpoint()),
-            )?
-        };
-
         let cache = sm.payload_cache.clone();
         let on_chunk_persisted: ChunkPersistedFn<RaftWalTypes<T>> =
             Arc::new(move |_persisted, prev_chunk_checkpoint: Option<Arc<RaftLogState<T>>>| {
@@ -281,11 +223,10 @@ impl<T: Types> RaftLog<T> {
                     .set_last_evictable(prev_chunk_checkpoint.last().cloned());
             });
 
-        let wal = ChunkedWal::new(wal_config, closed, open, on_chunk_persisted);
+        let wal = ChunkedWal::open(wal_config, &mut sm, on_chunk_persisted)?;
 
         let s = Self {
             config,
-            _dir_lock: dir_lock,
             state_machine: sm,
             wal,
             access_stat: Default::default(),
@@ -293,93 +234,6 @@ impl<T: Types> RaftLog<T> {
         };
 
         Ok(s)
-    }
-
-    /// Verifies that two chunks are consecutive by checking their end/start
-    /// offsets.
-    ///
-    /// This function ensures that there are no gaps between chunks in the WAL.
-    /// A gap would indicate data loss or corruption.
-    ///
-    /// # Arguments
-    ///
-    /// * `prev_end_offset` - The end offset of the previous chunk, if any
-    /// * `chunk_id` - The ID of the current chunk to verify
-    fn ensure_consecutive_chunks(
-        prev_end_offset: Option<u64>,
-        chunk_id: ChunkId,
-    ) -> Result<(), io::Error> {
-        let Some(prev_end) = prev_end_offset else {
-            return Ok(());
-        };
-
-        if prev_end != chunk_id.offset() {
-            let message = format!(
-                "Gap between chunks: {} -> {}; Can not open, \
-                        fix this error and re-open",
-                format_pad_u64(prev_end),
-                format_pad_u64(chunk_id.offset()),
-            );
-            return Err(io::Error::new(io::ErrorKind::InvalidData, message));
-        }
-
-        Ok(())
-    }
-
-    /// If there is a healthy last chunk, re-open it.
-    ///
-    /// Healthy means the data is complete and the chunk is not truncated.
-    /// If reused, the closed chunk will be removed from `closed_chunks`
-    fn reopen_last_closed(
-        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<RaftWalTypes<T>>>,
-    ) -> Option<OpenChunk<RaftLogRecord<T>>> {
-        // If the chunk is truncated, it is not healthy, do not re-open it.
-        {
-            let (_chunk_id, closed) = closed_chunks.iter().last()?;
-
-            if closed.chunk.is_truncated() {
-                return None;
-            }
-        }
-
-        let (_chunk_id, last) = closed_chunks.pop_last().unwrap();
-        let open = OpenChunk::new(last.chunk);
-        Some(open)
-    }
-
-    pub fn load_chunk_ids(config: &Config) -> Result<Vec<ChunkId>, io::Error> {
-        let path = &config.wal.dir;
-        let entries = std::fs::read_dir(path)?;
-        let mut chunk_ids = vec![];
-        for entry in entries {
-            let entry = entry?;
-            let file_name = entry.file_name();
-
-            let fn_str = file_name.to_string_lossy();
-            if fn_str == FileLock::LOCK_FILE_NAME {
-                continue;
-            }
-
-            let res = chunked_wal::Config::parse_chunk_file_name(&fn_str);
-
-            match res {
-                Ok(offset) => {
-                    chunk_ids.push(ChunkId(offset));
-                }
-                Err(err) => {
-                    log::warn!(
-                        "Ignore invalid WAL file name: '{}': {}",
-                        fn_str,
-                        err
-                    );
-                    continue;
-                }
-            };
-        }
-
-        chunk_ids.sort();
-
-        Ok(chunk_ids)
     }
 
     /// Update the RaftLog state.
