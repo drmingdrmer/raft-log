@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 use std::io;
 
-use chunked_wal::ClosedChunk;
+use chunked_wal::ClosedChunkReader;
 
-use crate::ChunkId;
 use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
@@ -20,7 +19,7 @@ pub struct DumpRaftLog<T: Types> {
 
     pub(crate) logs: Vec<LogData<T>>,
     pub(crate) cache: BTreeMap<T::LogId, T::LogPayload>,
-    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<RaftWalTypes<T>>>,
+    pub(crate) record_reader: ClosedChunkReader<RaftWalTypes<T>>,
 
     pub(crate) cache_hit: usize,
     pub(crate) cache_miss: usize,
@@ -69,17 +68,7 @@ impl<T: Types> DumpRaftLogIter<'_, T> {
     ) -> Result<T::LogPayload, io::Error> {
         let chunk_id = data.chunk_id;
         let segment = data.record_segment;
-        let closed = self.data.chunks.get(&chunk_id).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!(
-                    "Chunk not found: {}; when:(DumpRaftLogIter open cache-miss read)",
-                    chunk_id
-                ),
-            )
-        })?;
-
-        let record = closed.chunk.read_record(segment)?;
+        let record = self.data.record_reader.read_record(chunk_id, segment)?;
 
         if let WALRecord::Action(RaftLogAction::Append(log_id, payload)) =
             record

@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use chunked_wal::ChunkPersistedFn;
-use chunked_wal::ChunkStat;
 use chunked_wal::ChunkedWal;
 use log::info;
 
+use crate::ChunkId;
 use crate::Config;
 use crate::RaftLogRecord;
 use crate::RaftWalTypes;
@@ -43,10 +43,10 @@ pub struct RaftLog<T: Types> {
 
     pub(crate) state_machine: RaftLogStateMachine<T>,
 
-    /// The chunk paths that are no longer needed because all logs in them are
+    /// The chunk IDs that are no longer needed because all logs in them are
     /// purged. But removing them must be postponed until the purge record
     /// is flushed to disk.
-    removed_chunks: Vec<String>,
+    removed_chunks: Vec<ChunkId>,
 
     access_stat: AccessStat,
 }
@@ -116,18 +116,16 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         // After the purge record is flushed to disk,
         // remove them in the FlushWorker
 
-        while let Some((_chunk_id, closed)) = self.wal.closed.first_key_value()
-        {
-            if closed.state.last.as_ref() > Some(&upto) {
-                break;
-            }
-            let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();
-            let path = self.config.wal.chunk_path(chunk_id);
+        let chunk_ids = self.wal.drain_closed_chunks_while(|state| {
+            state.last.as_ref() <= Some(&upto)
+        });
+
+        for chunk_id in chunk_ids {
             info!(
                 "RaftLog: scheduled to remove chunk after next flush: {}",
-                path
+                self.config.wal.chunk_path(chunk_id)
             );
-            self.removed_chunks.push(path);
+            self.removed_chunks.push(chunk_id);
         }
 
         Ok(res)
@@ -165,13 +163,13 @@ impl<T: Types> RaftLog<T> {
         let logs = self.state_machine.log.values().cloned().collect::<Vec<_>>();
         let cache =
             self.state_machine.payload_cache.read().unwrap().cache.clone();
-        let chunks = self.wal.closed.clone();
+        let record_reader = self.wal.closed_chunk_reader();
 
         DumpRaftLog {
             state: self.state_machine.checkpoint(),
             logs,
             cache,
-            chunks,
+            record_reader,
             cache_hit: 0,
             cache_miss: 0,
         }
@@ -182,10 +180,7 @@ impl<T: Types> RaftLog<T> {
     /// This method returns a reference type `RefDump` containing the RaftLog
     /// configuration and the RaftLog instance itself.
     pub fn dump(&self) -> RefDump<'_, T> {
-        RefDump {
-            config: self.config.clone(),
-            raft_log: self,
-        }
+        RefDump { raft_log: self }
     }
 
     /// Get a reference to the RaftLog configuration.
@@ -310,18 +305,9 @@ impl<T: Types> RaftLog<T> {
     /// - The number of closed chunks
     /// - The open chunk statistics
     pub fn stat(&self) -> Stat<T> {
-        let closed =
-            self.wal.closed.values().map(|c| c.stat()).collect::<Vec<_>>();
-
-        let open = &self.wal.open;
-        let open_stat = ChunkStat {
-            chunk_id: open.chunk.chunk_id(),
-            records_count: open.chunk.records_count() as u64,
-            global_start: open.chunk.global_start(),
-            global_end: open.chunk.global_end(),
-            size: open.chunk.chunk_size(),
-            log_state: self.state_machine.checkpoint(),
-        };
+        let closed = self.wal.closed_chunk_stats();
+        let open_stat =
+            self.wal.open_chunk_stat(self.state_machine.checkpoint());
         let cache = self.state_machine.payload_cache.read().unwrap();
 
         Stat {
@@ -390,7 +376,7 @@ impl<T: Types> RaftLog<T> {
         StateMachine::apply(
             &mut self.state_machine,
             rec,
-            self.wal.open.chunk.chunk_id(),
+            self.wal.open_chunk_id(),
             self.wal.last_segment(),
         )?;
 
@@ -404,15 +390,6 @@ impl<T: Types> RaftLog<T> {
     /// This includes all closed chunks and the open chunk, measuring from the
     /// start of the earliest chunk to the end of the open chunk.
     pub fn on_disk_size(&self) -> u64 {
-        let end = self.wal.open.chunk.global_end();
-        let open_start = self.wal.open.chunk.global_start();
-        let first_closed_start = self
-            .wal
-            .closed
-            .first_key_value()
-            .map(|(_, v)| v.chunk.global_start())
-            .unwrap_or(open_start);
-
-        end - first_closed_start
+        self.wal.on_disk_size()
     }
 }

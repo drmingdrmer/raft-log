@@ -18,16 +18,16 @@ use chunked_wal::Chunk;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 
-use crate::api::raft_log_writer::blocking_flush;
-use crate::api::raft_log_writer::RaftLogWriter;
-use crate::testing::ss;
-use crate::testing::TestTypes;
-use crate::tests::context::TestContext;
-use crate::tests::sample_data;
 use crate::ChunkId;
 use crate::Dump;
 use crate::DumpApi;
 use crate::RaftLogRecord;
+use crate::api::raft_log_writer::RaftLogWriter;
+use crate::api::raft_log_writer::blocking_flush;
+use crate::testing::TestTypes;
+use crate::testing::ss;
+use crate::tests::context::TestContext;
+use crate::tests::sample_data;
 
 type TestChunk = Chunk<RaftLogRecord<TestTypes>>;
 
@@ -132,8 +132,8 @@ fn test_reopen() -> Result<(), io::Error> {
 }
 
 #[test]
-fn test_reopen_restores_payload_cache_evictable_boundary(
-) -> Result<(), io::Error> {
+fn test_reopen_restores_payload_cache_evictable_boundary()
+-> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
     ctx.config.wal.chunk_max_records = Some(5);
 
@@ -248,9 +248,8 @@ fn test_reopen_unfinished_tailing_zero_chunk() -> Result<(), io::Error> {
         {
             let rl = ctx.new_raft_log()?;
 
-            let last_closed = rl.wal.closed.last_key_value().unwrap().1;
             assert_eq!(
-                last_closed.chunk.truncated_file_size(),
+                rl.wal.last_closed_chunk_truncated_file_size(),
                 Some(129 + append_zeros)
             );
 

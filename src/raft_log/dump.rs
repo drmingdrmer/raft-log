@@ -1,8 +1,6 @@
 use std::io;
-use std::io::Error;
 use std::sync::Arc;
 
-use chunked_wal::Chunk;
 use chunked_wal::ChunkedWal;
 use chunked_wal::WalLock;
 
@@ -59,7 +57,6 @@ impl<T: Types> DumpApi<T> for Dump<T> {
 /// Unlike [`Dump`], this does not acquire a directory lock since it operates on
 /// an already initialized RaftLog.
 pub struct RefDump<'a, T: Types> {
-    pub(crate) config: Arc<Config>,
     pub(crate) raft_log: &'a RaftLog<T>,
 }
 
@@ -75,35 +72,13 @@ impl<T: Types> DumpApi<T> for RefDump<'_, T> {
     /// # Errors
     /// Returns an IO error if reading the chunks fails or if the callback
     /// returns an error.
-    fn write_with<D>(&self, mut write_record: D) -> Result<(), Error>
+    fn write_with<D>(&self, write_record: D) -> Result<(), io::Error>
     where D: FnMut(
             ChunkId,
             u64,
-            Result<(Segment, RaftLogRecord<T>), Error>,
-        ) -> Result<(), Error> {
-        let closed =
-            self.raft_log.wal.closed.values().map(|c| c.chunk.chunk_id());
-
-        let chunk_ids = closed.chain([self.raft_log.wal.open.chunk.chunk_id()]);
-
-        for chunk_id in chunk_ids {
-            let f = Chunk::<RaftLogRecord<T>>::open_chunk_file(
-                &self.config.wal,
-                chunk_id,
-            )?;
-
-            let it = Chunk::<RaftLogRecord<T>>::load_records_iter(
-                &self.config.wal,
-                Arc::new(f),
-                chunk_id,
-            )?;
-
-            for (i, res) in it.enumerate() {
-                write_record(chunk_id, i as u64, res)?;
-            }
-        }
-
-        Ok(())
+            Result<(Segment, RaftLogRecord<T>), io::Error>,
+        ) -> Result<(), io::Error> {
+        self.raft_log.wal.dump_loaded_records(write_record)
     }
 }
 
