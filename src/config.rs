@@ -27,30 +27,6 @@ impl Config {
         }
     }
 
-    /// Creates a new Config with all configurable parameters
-    pub fn new_full(
-        dir: impl ToString,
-        log_cache_max_items: Option<usize>,
-        log_cache_capacity: Option<usize>,
-        read_buffer_size: Option<usize>,
-        chunk_max_records: Option<usize>,
-        chunk_max_size: Option<usize>,
-    ) -> Self {
-        Self {
-            wal: chunked_wal::Config {
-                dir: dir.to_string(),
-                read_buffer_size,
-                chunk_max_records,
-                chunk_max_size,
-                truncate_incomplete_record: None,
-                flush_batch_wait: None,
-                flush_batch_max_items: None,
-            },
-            log_cache_max_items,
-            log_cache_capacity,
-        }
-    }
-
     /// Returns the maximum number of items in log cache (defaults to 100,000)
     pub fn log_cache_max_items(&self) -> usize {
         self.log_cache_max_items.unwrap_or(100_000)
@@ -67,15 +43,20 @@ mod tests {
     use super::Config;
 
     #[test]
-    fn test_new_full_embeds_wal_config() {
-        let config = Config::new_full(
-            "raft-log-dir",
-            Some(7),
-            Some(11),
-            Some(13),
-            Some(17),
-            Some(19),
-        );
+    fn test_explicit_config_embeds_wal_config() {
+        let config = Config {
+            wal: crate::chunked_wal::Config {
+                dir: "raft-log-dir".to_string(),
+                read_buffer_size: Some(13),
+                chunk_max_records: Some(17),
+                chunk_max_size: Some(19),
+                truncate_incomplete_record: None,
+                flush_batch_wait: None,
+                flush_batch_max_items: None,
+            },
+            log_cache_max_items: Some(7),
+            log_cache_capacity: Some(11),
+        };
 
         assert_eq!("raft-log-dir", config.wal.dir);
         assert_eq!(Some(13), config.wal.read_buffer_size);

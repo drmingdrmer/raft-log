@@ -88,6 +88,7 @@ pub mod errors;
 
 pub use api::types::RaftWalTypes;
 pub use api::types::Types;
+pub use chunked_wal;
 pub use chunked_wal::Callback;
 pub use chunked_wal::ChunkId;
 pub use chunked_wal::ChunkStat;
