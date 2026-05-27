@@ -212,14 +212,16 @@ fn run_case(
 ) -> Result<CaseResult, Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let config = Arc::new(Config {
-        dir: temp.path().to_string_lossy().to_string(),
+        wal: chunked_wal::Config {
+            dir: temp.path().to_string_lossy().to_string(),
+            chunk_max_records: Some(1024 * 1024),
+            chunk_max_size: Some(1024 * 1024 * 1024),
+            flush_batch_wait: Some(wait),
+            flush_batch_max_items: Some(batch_size),
+            ..Default::default()
+        },
         log_cache_max_items: Some(1024 * 1024),
         log_cache_capacity: Some(1024 * 1024 * 1024),
-        chunk_max_records: Some(1024 * 1024),
-        chunk_max_size: Some(1024 * 1024 * 1024),
-        flush_batch_wait: Some(wait),
-        flush_batch_max_items: Some(batch_size),
-        ..Default::default()
     });
 
     let mut log = RaftLog::<BenchTypes>::open(config)?;
@@ -258,7 +260,7 @@ fn run_case(
         latencies.push(event.latency);
     }
 
-    log.wait_worker_idle();
+    log.wait_worker_idle()?;
     let elapsed = start.elapsed();
     let metrics = log.stat().flush_metrics;
 

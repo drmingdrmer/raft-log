@@ -5,10 +5,14 @@
 //! such as log id, log payload, vote, callback, and user data.
 
 use std::fmt::Debug;
+use std::marker::PhantomData;
 
+use chunked_wal::Callback;
 use codeq::Codec;
 
-use crate::raft_log::wal::callback::Callback;
+use crate::RaftLogAction;
+use crate::WalTypes;
+use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 /// The `Types` trait defines the core type parameters used throughout the
 /// Raft-log implementation.
@@ -39,17 +43,17 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
     /// cluster have voted for this candidate in this term.
     ///
     /// In some raft implementation the vote is called `hard state`
-    type Vote: Debug + Clone + PartialOrd + Eq + Codec + 'static;
+    type Vote: Debug + Clone + PartialOrd + Eq + Codec + Send + Sync + 'static;
 
     /// Callback handlers for notification of an IO operation.
-    type Callback: Callback + Send + 'static;
+    type Callback: Callback;
 
     /// Custom data that can be attached to Raft-log.
     ///
     /// This data is not used by the Raft-log implementation, but it can be used
     /// by the user. For example, an application could attach a
     /// configuration or the node info in this field.
-    type UserData: Debug + Clone + Eq + Codec + 'static;
+    type UserData: Debug + Clone + Eq + Codec + Send + Sync + 'static;
 
     /// Get the log index from the log id.
     fn log_index(log_id: &Self::LogId) -> u64;
@@ -67,4 +71,15 @@ where Self: Debug + Default + PartialEq + Eq + Clone + 'static
             None => 0,
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RaftWalTypes<T>(PhantomData<T>);
+
+impl<T> WalTypes for RaftWalTypes<T>
+where T: Types
+{
+    type Action = RaftLogAction<T>;
+    type Checkpoint = RaftLogState<T>;
+    type Callback = T::Callback;
 }

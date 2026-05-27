@@ -25,10 +25,7 @@ impl TestContext {
     pub(crate) fn new() -> Result<TestContext, io::Error> {
         let temp_dir = tempfile::tempdir()?;
 
-        let config = Config {
-            dir: temp_dir.path().to_str().unwrap().to_string(),
-            ..Default::default()
-        };
+        let config = Config::new(temp_dir.path().to_str().unwrap());
 
         Ok(TestContext {
             config,

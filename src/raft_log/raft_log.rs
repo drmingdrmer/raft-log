@@ -1,34 +1,29 @@
-use std::collections::BTreeMap;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use codeq::OffsetSize;
-use codeq::error_context_ext::ErrorContextExt;
+use chunked_wal::ChunkPersistedFn;
+use chunked_wal::ChunkedWal;
 use log::info;
 
 use crate::ChunkId;
 use crate::Config;
+use crate::RaftLogRecord;
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
 use crate::api::raft_log_writer::RaftLogWriter;
 use crate::api::state_machine::StateMachine;
 use crate::api::wal::WAL;
-use crate::chunk::Chunk;
-use crate::chunk::closed_chunk::ClosedChunk;
-use crate::chunk::open_chunk::OpenChunk;
 use crate::errors::LogIndexNotFound;
 use crate::errors::RaftLogStateError;
-use crate::file_lock::FileLock;
-use crate::num::format_pad_u64;
 use crate::raft_log::access_state::AccessStat;
 use crate::raft_log::dump::RefDump;
 use crate::raft_log::dump_raft_log::DumpRaftLog;
-use crate::raft_log::stat::ChunkStat;
+use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::stat::Stat;
 use crate::raft_log::state_machine::RaftLogStateMachine;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
-use crate::raft_log::wal::RaftLogWAL;
 use crate::types::Segment;
 
 /// RaftLog is a Write-Ahead-Log implementation for the Raft consensus protocol.
@@ -44,17 +39,14 @@ use crate::types::Segment;
 pub struct RaftLog<T: Types> {
     pub(crate) config: Arc<Config>,
 
-    /// Acquire the dir exclusive lock when writing to the log.
-    _dir_lock: FileLock,
-
-    pub(crate) wal: RaftLogWAL<T>,
+    pub(crate) wal: ChunkedWal<RaftWalTypes<T>>,
 
     pub(crate) state_machine: RaftLogStateMachine<T>,
 
-    /// The chunk paths that are no longer needed because all logs in them are
+    /// The chunk IDs that are no longer needed because all logs in them are
     /// purged. But removing them must be postponed until the purge record
     /// is flushed to disk.
-    removed_chunks: Vec<String>,
+    removed_chunks: Vec<ChunkId>,
 
     access_stat: AccessStat,
 }
@@ -66,19 +58,20 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     ) -> Result<Segment, io::Error> {
         let mut state = self.state_machine.checkpoint();
         state.user_data = user_data;
-        let record = WALRecord::State(state);
+        let record = RaftLogRecord::Checkpoint(state);
         self.append_and_apply(&record)
     }
 
     fn save_vote(&mut self, vote: T::Vote) -> Result<Segment, io::Error> {
-        let record = WALRecord::SaveVote(vote.clone());
+        let record = RaftLogRecord::Action(RaftLogAction::SaveVote(vote));
         self.append_and_apply(&record)
     }
 
     fn append<I>(&mut self, entries: I) -> Result<Segment, io::Error>
     where I: IntoIterator<Item = (T::LogId, T::LogPayload)> {
         for (log_id, payload) in entries {
-            let record = WALRecord::Append(log_id, payload);
+            let record =
+                RaftLogRecord::Action(RaftLogAction::Append(log_id, payload));
             self.append_and_apply(&record)?;
         }
         Ok(self.wal.last_segment())
@@ -95,7 +88,8 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             Some(log_id)
         };
 
-        let record = WALRecord::TruncateAfter(log_id);
+        let record =
+            RaftLogRecord::Action(RaftLogAction::TruncateAfter(log_id));
         self.append_and_apply(&record)
     }
 
@@ -114,32 +108,31 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             return Ok(self.wal.last_segment());
         }
 
-        let record = WALRecord::PurgeUpto(upto.clone());
+        let record =
+            RaftLogRecord::Action(RaftLogAction::PurgeUpto(upto.clone()));
         let res = self.append_and_apply(&record)?;
 
         // Buffer the chunk ids to remove.
         // After the purge record is flushed to disk,
         // remove them in the FlushWorker
 
-        while let Some((_chunk_id, closed)) = self.wal.closed.first_key_value()
-        {
-            if closed.state.last.as_ref() > Some(&upto) {
-                break;
-            }
-            let (chunk_id, _r) = self.wal.closed.pop_first().unwrap();
-            let path = self.config.chunk_path(chunk_id);
+        let chunk_ids = self.wal.drain_closed_chunks_while(|state| {
+            state.last.as_ref() <= Some(&upto)
+        });
+
+        for chunk_id in chunk_ids {
             info!(
                 "RaftLog: scheduled to remove chunk after next flush: {}",
-                path
+                self.config.wal.chunk_path(chunk_id)
             );
-            self.removed_chunks.push(path);
+            self.removed_chunks.push(chunk_id);
         }
 
         Ok(res)
     }
 
     fn commit(&mut self, log_id: T::LogId) -> Result<Segment, io::Error> {
-        let record = WALRecord::Commit(log_id);
+        let record = RaftLogRecord::Action(RaftLogAction::Commit(log_id));
         self.append_and_apply(&record)
     }
 
@@ -170,13 +163,13 @@ impl<T: Types> RaftLog<T> {
         let logs = self.state_machine.log.values().cloned().collect::<Vec<_>>();
         let cache =
             self.state_machine.payload_cache.read().unwrap().cache.clone();
-        let chunks = self.wal.closed.clone();
+        let record_reader = self.wal.closed_chunk_reader();
 
         DumpRaftLog {
             state: self.state_machine.checkpoint(),
             logs,
             cache,
-            chunks,
+            record_reader,
             cache_hit: 0,
             cache_miss: 0,
         }
@@ -187,10 +180,7 @@ impl<T: Types> RaftLog<T> {
     /// This method returns a reference type `RefDump` containing the RaftLog
     /// configuration and the RaftLog instance itself.
     pub fn dump(&self) -> RefDump<'_, T> {
-        RefDump {
-            config: self.config.clone(),
-            raft_log: self,
-        }
+        RefDump { raft_log: self }
     }
 
     /// Get a reference to the RaftLog configuration.
@@ -212,59 +202,26 @@ impl<T: Types> RaftLog<T> {
     /// - There are gaps between chunk offsets
     /// - WAL records are invalid
     pub fn open(config: Arc<Config>) -> Result<Self, io::Error> {
-        let dir_lock = FileLock::new(config.clone())
-            .context(|| format!("open RaftLog in '{}'", config.dir))?;
-
-        let chunk_ids = Self::load_chunk_ids(&config)?;
+        let wal_config = Arc::new(config.wal.clone());
 
         let mut sm = RaftLogStateMachine::new(&config);
-        let mut closed = BTreeMap::new();
-        let mut prev_end_offset = None;
-        let mut last_log_id = None;
-
-        for chunk_id in chunk_ids.iter().copied() {
-            // Only the last chunk(open chunk) needs to keep all log payload in
-            // cache. Therefore, payloads in previous chunks are marked as
-            // evictable.
-            sm.payload_cache.write().unwrap().set_last_evictable(last_log_id);
-
-            Self::ensure_consecutive_chunks(prev_end_offset, chunk_id)?;
-
-            let (chunk, records) = Chunk::open(config.clone(), chunk_id)?;
-
-            for (i, record) in records.into_iter().enumerate() {
-                let start = chunk.global_offsets[i];
-                let end = chunk.global_offsets[i + 1];
-                let seg = Segment::new(start, end - start);
-                sm.apply(&record, chunk_id, seg)?;
-            }
-
-            prev_end_offset = Some(chunk.last_segment().end().0);
-            let checkpoint = sm.checkpoint();
-            last_log_id = checkpoint.last().cloned();
-
-            closed.insert(chunk_id, ClosedChunk::new(chunk, checkpoint));
-        }
-
-        let open = Self::reopen_last_closed(&mut closed);
-
-        let open = if let Some(open) = open {
-            open
-        } else {
-            OpenChunk::create(
-                config.clone(),
-                ChunkId(prev_end_offset.unwrap_or_default()),
-                WALRecord::State(sm.checkpoint()),
-            )?
-        };
-
         let cache = sm.payload_cache.clone();
+        let on_chunk_persisted: ChunkPersistedFn<RaftWalTypes<T>> =
+            Arc::new(move |_persisted, prev_chunk_checkpoint: Option<Arc<RaftLogState<T>>>| {
+                let Some(prev_chunk_checkpoint) = prev_chunk_checkpoint else {
+                    return;
+                };
 
-        let wal = RaftLogWAL::new(config.clone(), closed, open, cache);
+                cache
+                    .write()
+                    .unwrap()
+                    .set_last_evictable(prev_chunk_checkpoint.last().cloned());
+            });
+
+        let wal = ChunkedWal::open(wal_config, &mut sm, on_chunk_persisted)?;
 
         let s = Self {
             config,
-            _dir_lock: dir_lock,
             state_machine: sm,
             wal,
             access_stat: Default::default(),
@@ -272,93 +229,6 @@ impl<T: Types> RaftLog<T> {
         };
 
         Ok(s)
-    }
-
-    /// Verifies that two chunks are consecutive by checking their end/start
-    /// offsets.
-    ///
-    /// This function ensures that there are no gaps between chunks in the WAL.
-    /// A gap would indicate data loss or corruption.
-    ///
-    /// # Arguments
-    ///
-    /// * `prev_end_offset` - The end offset of the previous chunk, if any
-    /// * `chunk_id` - The ID of the current chunk to verify
-    fn ensure_consecutive_chunks(
-        prev_end_offset: Option<u64>,
-        chunk_id: ChunkId,
-    ) -> Result<(), io::Error> {
-        let Some(prev_end) = prev_end_offset else {
-            return Ok(());
-        };
-
-        if prev_end != chunk_id.offset() {
-            let message = format!(
-                "Gap between chunks: {} -> {}; Can not open, \
-                        fix this error and re-open",
-                format_pad_u64(prev_end),
-                format_pad_u64(chunk_id.offset()),
-            );
-            return Err(io::Error::new(io::ErrorKind::InvalidData, message));
-        }
-
-        Ok(())
-    }
-
-    /// If there is a healthy last chunk, re-open it.
-    ///
-    /// Healthy means the data is complete and the chunk is not truncated.
-    /// If reused, the closed chunk will be removed from `closed_chunks`
-    fn reopen_last_closed(
-        closed_chunks: &mut BTreeMap<ChunkId, ClosedChunk<T>>,
-    ) -> Option<OpenChunk<T>> {
-        // If the chunk is truncated, it is not healthy, do not re-open it.
-        {
-            let (_chunk_id, closed) = closed_chunks.iter().last()?;
-
-            if closed.chunk.truncated.is_some() {
-                return None;
-            }
-        }
-
-        let (_chunk_id, last) = closed_chunks.pop_last().unwrap();
-        let open = OpenChunk::new(last.chunk);
-        Some(open)
-    }
-
-    pub fn load_chunk_ids(config: &Config) -> Result<Vec<ChunkId>, io::Error> {
-        let path = &config.dir;
-        let entries = std::fs::read_dir(path)?;
-        let mut chunk_ids = vec![];
-        for entry in entries {
-            let entry = entry?;
-            let file_name = entry.file_name();
-
-            let fn_str = file_name.to_string_lossy();
-            if fn_str == FileLock::LOCK_FILE_NAME {
-                continue;
-            }
-
-            let res = Config::parse_chunk_file_name(&fn_str);
-
-            match res {
-                Ok(offset) => {
-                    chunk_ids.push(ChunkId(offset));
-                }
-                Err(err) => {
-                    log::warn!(
-                        "Ignore invalid WAL file name: '{}': {}",
-                        fn_str,
-                        err
-                    );
-                    continue;
-                }
-            };
-        }
-
-        chunk_ids.sort();
-
-        Ok(chunk_ids)
     }
 
     /// Update the RaftLog state.
@@ -369,7 +239,7 @@ impl<T: Types> RaftLog<T> {
         &mut self,
         state: RaftLogState<T>,
     ) -> Result<Segment, io::Error> {
-        let record = WALRecord::State(state);
+        let record = RaftLogRecord::Checkpoint(state);
         self.append_and_apply(&record)
     }
 
@@ -394,7 +264,21 @@ impl<T: Types> RaftLog<T> {
                 payload
             } else {
                 self.access_stat.cache_miss.fetch_add(1, Ordering::Relaxed);
-                self.wal.load_log_payload(log_data)?
+
+                let record = self
+                    .wal
+                    .load_record(&log_data.chunk_id, log_data.record_segment)?;
+
+                if let WALRecord::Action(RaftLogAction::Append(
+                    log_id,
+                    payload,
+                )) = record
+                {
+                    debug_assert_eq!(log_id, log_data.log_id);
+                    payload
+                } else {
+                    panic!("Expect Record::Append but: {:?}", record);
+                }
             };
 
             Ok((log_id, payload))
@@ -421,18 +305,9 @@ impl<T: Types> RaftLog<T> {
     /// - The number of closed chunks
     /// - The open chunk statistics
     pub fn stat(&self) -> Stat<T> {
-        let closed =
-            self.wal.closed.values().map(|c| c.stat()).collect::<Vec<_>>();
-
-        let open = &self.wal.open;
-        let open_stat = ChunkStat {
-            chunk_id: open.chunk.chunk_id(),
-            records_count: open.chunk.records_count() as u64,
-            global_start: open.chunk.global_start(),
-            global_end: open.chunk.global_end(),
-            size: open.chunk.chunk_size(),
-            log_state: self.state_machine.checkpoint(),
-        };
+        let closed = self.wal.closed_chunk_stats();
+        let open_stat =
+            self.wal.open_chunk_stat(self.state_machine.checkpoint());
         let cache = self.state_machine.payload_cache.read().unwrap();
 
         Stat {
@@ -472,8 +347,8 @@ impl<T: Types> RaftLog<T> {
     /// updates issued before this call are complete. Note that the payload
     /// cache item count may still be non-deterministic because eviction is
     /// lazy; call `drain_cache_evictable()` afterwards to normalize it.
-    pub fn wait_worker_idle(&self) {
-        self.wal.wait_worker_idle();
+    pub fn wait_worker_idle(&self) -> Result<(), io::Error> {
+        self.wal.wait_worker_idle()
     }
 
     /// Drain all evictable entries from the payload cache.
@@ -495,13 +370,13 @@ impl<T: Types> RaftLog<T> {
 
     fn append_and_apply(
         &mut self,
-        rec: &WALRecord<T>,
+        rec: &RaftLogRecord<T>,
     ) -> Result<Segment, io::Error> {
         WAL::append(&mut self.wal, rec)?;
         StateMachine::apply(
             &mut self.state_machine,
             rec,
-            self.wal.open.chunk.chunk_id(),
+            self.wal.open_chunk_id(),
             self.wal.last_segment(),
         )?;
 
@@ -515,15 +390,6 @@ impl<T: Types> RaftLog<T> {
     /// This includes all closed chunks and the open chunk, measuring from the
     /// start of the earliest chunk to the end of the open chunk.
     pub fn on_disk_size(&self) -> u64 {
-        let end = self.wal.open.chunk.global_end();
-        let open_start = self.wal.open.chunk.global_start();
-        let first_closed_start = self
-            .wal
-            .closed
-            .first_key_value()
-            .map(|(_, v)| v.chunk.global_start())
-            .unwrap_or(open_start);
-
-        end - first_closed_start
+        self.wal.on_disk_size()
     }
 }

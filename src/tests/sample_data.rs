@@ -56,7 +56,7 @@ pub fn build_sample_data_purge_upto_3(
 pub fn build_sample_data(
     rl: &mut RaftLog<TestTypes>,
 ) -> Result<String, io::Error> {
-    assert_eq!(rl.config.chunk_max_records, Some(5));
+    assert_eq!(rl.config.wal.chunk_max_records, Some(5));
 
     let logs = [
         //

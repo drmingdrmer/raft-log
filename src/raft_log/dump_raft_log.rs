@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::io;
 
-use crate::ChunkId;
+use chunked_wal::ClosedChunkReader;
+
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
-use crate::chunk::closed_chunk::ClosedChunk;
 use crate::raft_log::log_data::LogData;
+use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::raft_log::state_machine::raft_log_state::RaftLogState;
 
 /// A struct that contains a snapshot of RaftLog data for inspection or
@@ -17,7 +19,7 @@ pub struct DumpRaftLog<T: Types> {
 
     pub(crate) logs: Vec<LogData<T>>,
     pub(crate) cache: BTreeMap<T::LogId, T::LogPayload>,
-    pub(crate) chunks: BTreeMap<ChunkId, ClosedChunk<T>>,
+    pub(crate) record_reader: ClosedChunkReader<RaftWalTypes<T>>,
 
     pub(crate) cache_hit: usize,
     pub(crate) cache_miss: usize,
@@ -66,19 +68,11 @@ impl<T: Types> DumpRaftLogIter<'_, T> {
     ) -> Result<T::LogPayload, io::Error> {
         let chunk_id = data.chunk_id;
         let segment = data.record_segment;
-        let closed = self.data.chunks.get(&chunk_id).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!(
-                    "Chunk not found: {}; when:(DumpRaftLogIter open cache-miss read)",
-                    chunk_id
-                ),
-            )
-        })?;
+        let record = self.data.record_reader.read_record(chunk_id, segment)?;
 
-        let record = closed.chunk.read_record(segment)?;
-
-        if let WALRecord::Append(log_id, payload) = record {
+        if let WALRecord::Action(RaftLogAction::Append(log_id, payload)) =
+            record
+        {
             debug_assert_eq!(log_id, data.log_id);
             Ok(payload)
         } else {
@@ -130,7 +124,7 @@ mod tests {
         let mut ctx = TestContext::new()?;
         let config = &mut ctx.config;
 
-        config.chunk_max_records = Some(5);
+        config.wal.chunk_max_records = Some(5);
         config.log_cache_max_items = Some(3);
 
         let mut rl = ctx.new_raft_log()?;
@@ -173,7 +167,7 @@ mod tests {
     fn build_sample_data(
         rl: &mut RaftLog<TestTypes>,
     ) -> Result<String, io::Error> {
-        assert_eq!(rl.config.chunk_max_records, Some(5));
+        assert_eq!(rl.config.wal.chunk_max_records, Some(5));
 
         let logs = [
             //

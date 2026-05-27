@@ -47,10 +47,7 @@ impl Types for MyTypes {
 fn main() -> io::Result<()> {
     // Create a temporary directory for RaftLog data
     let temp_dir = tempfile::tempdir()?;
-    let config = Arc::new(Config {
-        dir: temp_dir.path().to_str().unwrap().to_string(),
-        ..Default::default()
-    });
+    let config = Arc::new(Config::new(temp_dir.path().to_str().unwrap()));
 
     // Open a RaftLog instance
     let mut raft_log = RaftLog::<MyTypes>::open(config)?;

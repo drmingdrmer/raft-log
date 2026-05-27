@@ -31,7 +31,7 @@ fn test_concurrent_read_race_condition() -> Result<(), io::Error> {
     let config = &mut ctx.config;
 
     // Small chunk to create multiple closed chunks quickly
-    config.chunk_max_records = Some(5);
+    config.wal.chunk_max_records = Some(5);
     // Disable cache to force all reads to go through disk (seek + read)
     config.log_cache_capacity = Some(0);
 

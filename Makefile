@@ -1,3 +1,5 @@
+COVERAGE_MIN_LINES ?= 90
+
 all: test lint doc
 
 test:
@@ -23,7 +25,12 @@ doc:
 bench:
 	cargo test --release -- --ignored
 
+coverage:
+	cargo llvm-cov --workspace --all-targets \
+		--ignore-filename-regex '(^|/)src/bin/' \
+		--fail-under-lines $(COVERAGE_MIN_LINES)
+
 clean:
 	cargo clean
 
-.PHONY: all test build check lint fmt clippy doc bench clean
+.PHONY: all test build check lint fmt clippy doc bench coverage clean

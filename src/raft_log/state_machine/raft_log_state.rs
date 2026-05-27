@@ -4,12 +4,14 @@ use std::io;
 
 use display_more::DisplayOptionExt;
 
+use crate::RaftLogRecord;
+use crate::WALRecord;
 use crate::api::types::Types;
 use crate::errors::LogIdNonConsecutive;
 use crate::errors::LogIdReversal;
 use crate::errors::RaftLogStateError;
 use crate::errors::VoteReversal;
-use crate::raft_log::wal::wal_record::WALRecord;
+use crate::raft_log::raft_log_action::RaftLogAction;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RaftLogState<T: Types> {
@@ -123,25 +125,25 @@ impl<T: Types> RaftLogState<T> {
 
     pub(crate) fn apply(
         &mut self,
-        rec: &WALRecord<T>,
+        rec: &RaftLogRecord<T>,
     ) -> Result<(), RaftLogStateError<T>> {
         match rec {
-            WALRecord::SaveVote(vote) => {
+            WALRecord::Action(RaftLogAction::SaveVote(vote)) => {
                 self.update_vote(vote)?;
             }
-            WALRecord::Append(log_id, _payload) => {
+            WALRecord::Action(RaftLogAction::Append(log_id, _payload)) => {
                 self.append(log_id)?;
             }
-            WALRecord::Commit(log_id) => {
+            WALRecord::Action(RaftLogAction::Commit(log_id)) => {
                 self.commit(log_id)?;
             }
-            WALRecord::TruncateAfter(log_id) => {
+            WALRecord::Action(RaftLogAction::TruncateAfter(log_id)) => {
                 self.truncate_after(log_id.as_ref())?;
             }
-            WALRecord::PurgeUpto(log_id) => {
+            WALRecord::Action(RaftLogAction::PurgeUpto(log_id)) => {
                 self.purge(log_id)?;
             }
-            WALRecord::State(state) => {
+            WALRecord::Checkpoint(state) => {
                 *self = state.clone();
             }
         }

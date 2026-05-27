@@ -41,9 +41,12 @@ fn test_massive_load() -> std::io::Result<()> {
     // let path = "tests/foo".to_string();
 
     let config = Arc::new(Config {
-        dir: path,
+        wal: chunked_wal::Config {
+            dir: path,
+            chunk_max_records: Some(100),
+            ..Default::default()
+        },
         log_cache_max_items: Some(200),
-        chunk_max_records: Some(100),
         ..Default::default()
     });
 
@@ -96,7 +99,7 @@ fn test_massive_load() -> std::io::Result<()> {
                 let state = log.log_state();
                 writeln!(file, "{:?}", state)?;
 
-                log.wait_worker_idle();
+                log.wait_worker_idle()?;
                 log.drain_cache_evictable();
 
                 let stat = log.stat();
@@ -108,7 +111,7 @@ fn test_massive_load() -> std::io::Result<()> {
             }
         }
 
-        log.wait_worker_idle();
+        log.wait_worker_idle()?;
         log.drain_cache_evictable();
 
         let stat = log.stat();

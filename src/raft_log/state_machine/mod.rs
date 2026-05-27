@@ -7,11 +7,15 @@ use raft_log_state::RaftLogState;
 
 use crate::ChunkId;
 use crate::Config;
+use crate::RaftLogRecord;
+use crate::RaftWalTypes;
 use crate::Types;
 use crate::WALRecord;
+use crate::WalTypes;
 use crate::api::state_machine::StateMachine;
 use crate::errors::RaftLogStateError;
 use crate::raft_log::log_data::LogData;
+use crate::raft_log::raft_log_action::RaftLogAction;
 use crate::types::Segment;
 
 pub(crate) mod payload_cache;
@@ -37,19 +41,18 @@ impl<T: Types> RaftLogStateMachine<T> {
     }
 }
 
-impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
+impl<T: Types> StateMachine<RaftWalTypes<T>> for RaftLogStateMachine<T> {
     type Error = RaftLogStateError<T>;
-    type Checkpoint = RaftLogState<T>;
 
     fn apply(
         &mut self,
-        rec: &WALRecord<T>,
+        rec: &RaftLogRecord<T>,
         chunk_id: ChunkId,
         segment: Segment,
     ) -> Result<(), RaftLogStateError<T>> {
         match rec {
-            WALRecord::SaveVote(_vote) => {}
-            WALRecord::Append(log_id, payload) => {
+            WALRecord::Action(RaftLogAction::SaveVote(_vote)) => {}
+            WALRecord::Action(RaftLogAction::Append(log_id, payload)) => {
                 self.log.insert(
                     T::log_index(log_id),
                     LogData::new(log_id.clone(), chunk_id, segment),
@@ -59,8 +62,8 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
                     .unwrap()
                     .insert(log_id.clone(), payload.clone());
             }
-            WALRecord::Commit(_committed) => {}
-            WALRecord::TruncateAfter(log_id) => {
+            WALRecord::Action(RaftLogAction::Commit(_committed)) => {}
+            WALRecord::Action(RaftLogAction::TruncateAfter(log_id)) => {
                 let index = T::next_log_index(log_id.as_ref());
                 self.log.split_off(&index);
                 if let Some(log_id) = log_id {
@@ -69,20 +72,20 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
                     self.payload_cache.write().unwrap().clear();
                 }
             }
-            WALRecord::PurgeUpto(log_id) => {
+            WALRecord::Action(RaftLogAction::PurgeUpto(log_id)) => {
                 let index = T::next_log_index(Some(log_id));
                 let b = self.log.split_off(&index);
                 self.log = b;
 
                 self.payload_cache.write().unwrap().purge_upto(log_id);
             }
-            WALRecord::State(_st) => {}
+            WALRecord::Checkpoint(_st) => {}
         }
 
         self.log_state.apply(rec)
     }
 
-    fn checkpoint(&self) -> Self::Checkpoint {
+    fn checkpoint(&self) -> <RaftWalTypes<T> as WalTypes>::Checkpoint {
         self.log_state.clone()
     }
 }
@@ -91,9 +94,10 @@ impl<T: Types> StateMachine<WALRecord<T>> for RaftLogStateMachine<T> {
 mod tests {
     use crate::ChunkId;
     use crate::Config;
-    use crate::WALRecord;
+    use crate::RaftLogRecord;
     use crate::api::state_machine::StateMachine;
     use crate::errors::RaftLogStateError;
+    use crate::raft_log::raft_log_action::RaftLogAction;
     use crate::raft_log::state_machine::RaftLogStateMachine;
     use crate::raft_log::state_machine::raft_log_state::RaftLogState;
     use crate::testing::TestTypes;
@@ -106,13 +110,24 @@ mod tests {
         let mut sm = RaftLogStateMachine::<TestTypes>::new(&Config::default());
         let segment = Segment::new(0, 0);
 
-        sm.apply(&WALRecord::SaveVote((2, 1)), ChunkId(0), segment)?;
         sm.apply(
-            &WALRecord::Append((3, 7), ss("payload")),
+            &RaftLogRecord::Action(RaftLogAction::SaveVote((2, 1))),
             ChunkId(0),
             segment,
         )?;
-        sm.apply(&WALRecord::Commit((3, 7)), ChunkId(0), segment)?;
+        sm.apply(
+            &RaftLogRecord::Action(RaftLogAction::Append(
+                (3, 7),
+                ss("payload"),
+            )),
+            ChunkId(0),
+            segment,
+        )?;
+        sm.apply(
+            &RaftLogRecord::Action(RaftLogAction::Commit((3, 7))),
+            ChunkId(0),
+            segment,
+        )?;
 
         assert_eq!(
             RaftLogState {

@@ -1,8 +1,8 @@
 use std::io;
 
 use crate::ChunkId;
+use crate::RaftLogRecord;
 use crate::Types;
-use crate::WALRecord;
 use crate::dump_writer;
 use crate::types::Segment;
 
@@ -32,7 +32,7 @@ pub trait DumpApi<T: Types> {
     /// Writes the Raft log contents to the provided writer, using
     /// `std::fmt::Display` for record formatting.
     fn write_display<W: io::Write>(&self, mut w: W) -> Result<(), io::Error>
-    where WALRecord<T>: std::fmt::Display {
+    where RaftLogRecord<T>: std::fmt::Display {
         writeln!(&mut w, "RaftLog:")?;
         let write_record = |chunk_id, in_chunk_record_index, res| {
             dump_writer::write_record_display(
@@ -52,7 +52,7 @@ pub trait DumpApi<T: Types> {
     ///   takes:
     ///   - `ChunkId`: The ID of the chunk containing the record
     ///   - `u64`: The index of the record in its chunk
-    ///   - `Result<(Segment, WALRecord<T>), io::Error>`: The record data or
+    ///   - `Result<(Segment, RaftLogRecord<T>), io::Error>`: The record data or
     ///     error
     ///
     /// # Returns
@@ -63,7 +63,7 @@ pub trait DumpApi<T: Types> {
     where D: FnMut(
             ChunkId,
             u64,
-            Result<(Segment, WALRecord<T>), io::Error>,
+            Result<(Segment, RaftLogRecord<T>), io::Error>,
         ) -> Result<(), io::Error>;
 }
 
@@ -73,12 +73,13 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+    use crate::raft_log::raft_log_action::RaftLogAction;
     use crate::testing::TestDisplayTypes;
     use crate::types::Segment;
 
     struct MockDump {
         seg: Segment,
-        record: WALRecord<TestDisplayTypes>,
+        record: RaftLogRecord<TestDisplayTypes>,
     }
 
     impl DumpApi<TestDisplayTypes> for MockDump {
@@ -86,7 +87,7 @@ mod tests {
         where D: FnMut(
                 ChunkId,
                 u64,
-                Result<(Segment, WALRecord<TestDisplayTypes>), io::Error>,
+                Result<(Segment, RaftLogRecord<TestDisplayTypes>), io::Error>,
             ) -> Result<(), io::Error> {
             write_record(ChunkId(0), 0, Ok((self.seg, self.record.clone())))?;
             Ok(())
@@ -97,7 +98,7 @@ mod tests {
     fn test_write_to_string() -> Result<(), io::Error> {
         let dump = MockDump {
             seg: Segment::new(0, 10),
-            record: WALRecord::SaveVote(1),
+            record: RaftLogRecord::Action(RaftLogAction::SaveVote(1)),
         };
 
         let got = dump.write_to_string()?;
@@ -110,7 +111,10 @@ mod tests {
     fn test_write_uses_debug_format() -> Result<(), io::Error> {
         let dump = MockDump {
             seg: Segment::new(0, 10),
-            record: WALRecord::Append(3, "hello".to_string()),
+            record: RaftLogRecord::Action(RaftLogAction::Append(
+                3,
+                "hello".to_string(),
+            )),
         };
 
         let mut buf = Vec::new();
@@ -126,7 +130,10 @@ mod tests {
     fn test_write_display_uses_display_format() -> Result<(), io::Error> {
         let dump = MockDump {
             seg: Segment::new(0, 10),
-            record: WALRecord::Append(3, "hello".to_string()),
+            record: RaftLogRecord::Action(RaftLogAction::Append(
+                3,
+                "hello".to_string(),
+            )),
         };
 
         let mut buf = Vec::new();
@@ -142,7 +149,7 @@ mod tests {
     fn test_write_with_custom_writer() -> Result<(), io::Error> {
         let dump = MockDump {
             seg: Segment::new(0, 10),
-            record: WALRecord::Commit(5),
+            record: RaftLogRecord::Action(RaftLogAction::Commit(5)),
         };
 
         let mut custom_output = Vec::new();
