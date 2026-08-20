@@ -53,6 +53,7 @@ mod tests {
                 truncate_incomplete_record: None,
                 flush_batch_wait: None,
                 flush_batch_max_items: None,
+                flush_queue_max_bytes: None,
             },
             log_cache_max_items: Some(7),
             log_cache_capacity: Some(11),
@@ -65,6 +66,7 @@ mod tests {
         assert_eq!(None, config.wal.truncate_incomplete_record);
         assert_eq!(None, config.wal.flush_batch_wait);
         assert_eq!(None, config.wal.flush_batch_max_items);
+        assert_eq!(None, config.wal.flush_queue_max_bytes);
         assert_eq!(7, config.log_cache_max_items());
         assert_eq!(11, config.log_cache_capacity());
     }
