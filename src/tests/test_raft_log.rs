@@ -470,6 +470,100 @@ fn test_purge_removes_chunks() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// A purge record that became durable while its chunk removal never ran must
+/// not leave the covered chunk files behind: reopening re-derives them from the
+/// replayed `purged` state, and the next sync flush deletes them.
+#[test]
+fn test_reopen_removes_chunks_left_by_an_interrupted_purge()
+-> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.wal.chunk_max_records = Some(2);
+
+    let dir = ctx.config.wal.dir.clone();
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+
+        for i in 0..8u64 {
+            rl.append([((1, i), ss(format!("payload-{}", i)))])?;
+        }
+
+        rl.purge((1, 5))?;
+
+        // Make the purge record durable without letting the FlushWorker run
+        // the chunk removal, which is the state a crash leaves behind.
+        rl.flush(false, None)?;
+        rl.wait_worker_idle()?;
+
+        assert_eq!(10, wal_file_count(&dir)?);
+    }
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+
+        assert_eq!(Some((1, 5)), rl.log_state().purged);
+        assert_eq!(10, wal_file_count(&dir)?);
+
+        blocking_flush(&mut rl)?;
+        rl.wait_worker_idle()?;
+
+        assert_eq!(4, wal_file_count(&dir)?);
+
+        let got = rl.read(6, 10).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(
+            vec![((1, 6), ss("payload-6")), ((1, 7), ss("payload-7"))],
+            got
+        );
+    }
+
+    Ok(())
+}
+
+/// Records that carry no log entry still close chunks. Once the log is fully
+/// purged, such a chunk is obsolete the moment it closes, and the next sync
+/// flush must delete it without waiting for another `purge` call.
+#[test]
+fn test_chunks_closed_below_purge_point_are_removed() -> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    let config = &mut ctx.config;
+
+    config.wal.chunk_max_records = Some(2);
+
+    let dir = ctx.config.wal.dir.clone();
+    let mut rl = ctx.new_raft_log()?;
+
+    rl.append([((1, 0), ss("p0")), ((1, 1), ss("p1"))])?;
+    rl.purge((1, 1))?;
+    blocking_flush(&mut rl)?;
+    rl.wait_worker_idle()?;
+
+    assert_eq!(1, wal_file_count(&dir)?);
+
+    // No further purge: `save_vote` alone closes ten obsolete chunks.
+    for term in 2..12u64 {
+        rl.save_vote((term, term))?;
+    }
+    blocking_flush(&mut rl)?;
+    rl.wait_worker_idle()?;
+
+    assert_eq!(1, wal_file_count(&dir)?);
+    assert_eq!(Some((1, 1)), rl.log_state().purged);
+
+    Ok(())
+}
+
+fn wal_file_count(dir: &str) -> Result<usize, io::Error> {
+    let count = std::fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.path().extension().is_some_and(|ext| ext == "wal")
+        })
+        .count();
+    Ok(count)
+}
+
 /// Purged items should not reside in cache even when the cache size/item
 /// capacity is not reached.
 #[test]

@@ -43,9 +43,13 @@ pub struct RaftLog<T: Types> {
 
     pub(crate) state_machine: RaftLogStateMachine<T>,
 
-    /// The chunk IDs that are no longer needed because all logs in them are
-    /// purged. But removing them must be postponed until the purge record
-    /// is flushed to disk.
+    /// The chunk IDs whose logs are all purged, waiting to be deleted.
+    ///
+    /// Deleting a chunk file is only safe once the purge record covering it is
+    /// fsynced, so [`RaftLogWriter::flush`] with `sync` is what hands these
+    /// IDs to the FlushWorker. This buffer is process memory and does not
+    /// survive a restart; [`RaftLog::open`] rebuilds it from the replayed
+    /// `purged` state.
     removed_chunks: Vec<ChunkId>,
 
     access_stat: AccessStat,
@@ -94,9 +98,6 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     }
 
     fn purge(&mut self, upto: T::LogId) -> Result<Segment, io::Error> {
-        // NOTE that only when the purge record is committed, the chunk file can
-        // be removed.
-
         let purged = self.log_state().purged.as_ref();
 
         info!(
@@ -112,21 +113,7 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             RaftLogRecord::Action(RaftLogAction::PurgeUpto(upto.clone()));
         let res = self.append_and_apply(&record)?;
 
-        // Buffer the chunk ids to remove.
-        // After the purge record is flushed to disk,
-        // remove them in the FlushWorker
-
-        let chunk_ids = self.wal.drain_closed_chunks_while(|state| {
-            state.last.as_ref() <= Some(&upto)
-        });
-
-        for chunk_id in chunk_ids {
-            info!(
-                "RaftLog: scheduled to remove chunk after next flush: {}",
-                self.config.wal.chunk_path(chunk_id)
-            );
-            self.removed_chunks.push(chunk_id);
-        }
+        self.buffer_removable_chunks();
 
         Ok(res)
     }
@@ -143,8 +130,10 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
     ) -> Result<(), io::Error> {
         self.wal.send_pending(sync, callback)?;
 
-        // Chunk removal must be sequenced after the corresponding purge
-        // record is fsynced; the no-sync path leaves the queue alone.
+        // The FlushWorker drains its queue in order, so queuing the removal
+        // behind the sync above is what guarantees the covering purge record
+        // reaches the disk before any chunk file is unlinked. Without a sync
+        // there is nothing to order against, so the removal keeps waiting.
         if sync && !self.removed_chunks.is_empty() {
             let chunk_ids = self.removed_chunks.drain(..).collect::<Vec<_>>();
             self.wal.send_remove_chunks(chunk_ids)?;
@@ -220,13 +209,18 @@ impl<T: Types> RaftLog<T> {
 
         let wal = ChunkedWal::open(wal_config, &mut sm, on_chunk_persisted)?;
 
-        let s = Self {
+        let mut s = Self {
             config,
             state_machine: sm,
             wal,
             access_stat: Default::default(),
             removed_chunks: vec![],
         };
+
+        // `removed_chunks` starts empty, so a purge from an earlier run whose
+        // `RemoveChunks` request never ran left its chunks on disk. The
+        // replayed `purged` state is enough to find them again.
+        s.buffer_removable_chunks();
 
         Ok(s)
     }
@@ -368,6 +362,41 @@ impl<T: Types> RaftLog<T> {
         Ok(entry.log_id.clone())
     }
 
+    /// Move the closed chunks that hold only purged logs into
+    /// [`Self::removed_chunks`].
+    ///
+    /// A closed chunk is removable when its trailing checkpoint has
+    /// `last <= purged`: every log id it holds is at or below the purge point,
+    /// so no entry in the log map points into it. The scan stops at the first
+    /// chunk that fails the test, which keeps the drain to the oldest run of
+    /// removable chunks.
+    ///
+    /// Two events can make a chunk removable, and both call this: a chunk
+    /// closing at or below the purge point, and a `purge` that advances
+    /// `purged`. [`RaftLog::open`] calls it too, to rebuild the buffer that a
+    /// restart threw away.
+    ///
+    /// The boundary is the current `purged` state, not the `upto` argument of
+    /// a `purge` call in progress, so the result is the same whichever event
+    /// triggered the call.
+    fn buffer_removable_chunks(&mut self) {
+        let Some(purged) = self.log_state().purged.clone() else {
+            return;
+        };
+
+        let chunk_ids = self.wal.drain_closed_chunks_while(|state| {
+            state.last.as_ref() <= Some(&purged)
+        });
+
+        for chunk_id in chunk_ids {
+            info!(
+                "RaftLog: scheduled to remove chunk after next flush: {}",
+                self.config.wal.chunk_path(chunk_id)
+            );
+            self.removed_chunks.push(chunk_id);
+        }
+    }
+
     fn append_and_apply(
         &mut self,
         rec: &RaftLogRecord<T>,
@@ -380,7 +409,18 @@ impl<T: Types> RaftLog<T> {
             self.wal.last_segment(),
         )?;
 
-        self.wal.try_close_full_chunk(&self.state_machine)?;
+        let closed = self.wal.try_close_full_chunk(&self.state_machine)?;
+
+        // A chunk that closes at or below the purge point is obsolete right
+        // away. Example: the log is fully purged at `(1,1)`, so `last` and
+        // `purged` are both `(1,1)`; `save_vote` carries no log entry, so every
+        // chunk it closes still checkpoints `last == (1,1)` and holds nothing
+        // live. Buffering on the close event retires those chunks at the next
+        // sync flush, instead of waiting for a later `purge` call that a node
+        // with an empty log may never make.
+        if closed.is_some() {
+            self.buffer_removable_chunks();
+        }
 
         Ok(self.wal.last_segment())
     }
