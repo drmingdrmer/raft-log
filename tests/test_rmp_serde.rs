@@ -1,3 +1,14 @@
+//! Guards an assumption that WAL recovery depends on.
+//!
+//! `chunked-wal` decides what to do with a torn trailing record by its error
+//! kind: `UnexpectedEof` means "the write was interrupted", so the record is
+//! truncated and the chunk kept, while any other error means corruption and
+//! fails the open. An application whose `LogPayload` codec is rmp-serde
+//! inherits that rule, so rmp-serde must report a truncated input as
+//! `UnexpectedEof`. If a future rmp-serde release changed that, an interrupted
+//! write would start looking like corruption and the store would refuse to
+//! open.
+
 use std::io;
 use std::io::Cursor;
 
