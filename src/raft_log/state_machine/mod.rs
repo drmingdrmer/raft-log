@@ -42,6 +42,28 @@ impl<T: Types> RaftLogStateMachine<T> {
         }
     }
 
+    /// Verify that `rec` can be applied, without changing anything.
+    ///
+    /// [`RaftLog::append_and_apply`] runs this before the record reaches the
+    /// WAL buffer. `WAL::append` only fills the open chunk's pending buffer,
+    /// so a record that [`StateMachine::apply`] rejected afterwards would
+    /// still sit in that buffer, and the next flush would make it durable.
+    /// `RaftLog::open` then replays it, hits the same rejection, and the store
+    /// cannot be opened at all.
+    ///
+    /// [`Self::check_checkpoint`] is not part of this, because only
+    /// [`RaftLog::update_state`] may run it. Its doc comment says why.
+    pub(crate) fn check(
+        &self,
+        rec: &RaftLogRecord<T>,
+    ) -> Result<(), RaftLogStateError<T>> {
+        if let WALRecord::Action(RaftLogAction::PurgeUpto(log_id)) = rec {
+            self.check_purge(log_id)?;
+        }
+
+        self.log_state.check(rec)
+    }
+
     /// Verify that `upto` names a log id this log actually holds.
     ///
     /// A Raft log stores a greater log id at a greater index, so the log id

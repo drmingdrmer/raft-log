@@ -114,10 +114,10 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             upto, purged
         );
 
-        // Check before the record reaches the WAL buffer. `append_and_apply`
-        // writes the record first and applies it second, so a boundary
-        // rejected there would still be sitting in the buffer and would be
-        // fsynced by the next flush, leaving a log that cannot be reopened.
+        // `append_and_apply` checks this too, but the early return below skips
+        // it. An illegal boundary must be reported even when purging to it
+        // would be a no-op, because the caller is naming a log id this log
+        // never held.
         self.state_machine.check_purge(&upto)?;
 
         if T::log_index(&upto) < T::next_log_index(purged) {
@@ -258,10 +258,9 @@ impl<T: Types> RaftLog<T> {
         &mut self,
         state: RaftLogState<T>,
     ) -> Result<Segment, io::Error> {
-        // Check before the record reaches the WAL buffer. `append_and_apply`
-        // writes the record first and applies it second, so a state rejected
-        // there would still be fsynced by the next flush, leaving a log that
-        // cannot be reopened.
+        // Only a live store can be checked this way, so `append_and_apply`
+        // does not run this check and this is its sole call site.
+        // `RaftLogStateMachine::check_checkpoint` says why replay cannot.
         self.state_machine.check_checkpoint(&state)?;
 
         let record = RaftLogRecord::Checkpoint(state);
@@ -432,6 +431,12 @@ impl<T: Types> RaftLog<T> {
         &mut self,
         rec: &RaftLogRecord<T>,
     ) -> Result<Segment, io::Error> {
+        // Reject the record before it reaches the WAL buffer, so that a
+        // rejected write changes nothing: not the log map, not the payload
+        // cache, not the state, and not what the next flush persists. See
+        // `RaftLogStateMachine::check`.
+        self.state_machine.check(rec)?;
+
         WAL::append(&mut self.wal, rec)?;
         StateMachine::apply(
             &mut self.state_machine,

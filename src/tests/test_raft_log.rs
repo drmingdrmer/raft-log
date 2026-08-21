@@ -371,6 +371,68 @@ fn test_purge() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// A rejected write must change nothing and must leave the store reopenable.
+///
+/// The record is checked before `WAL::append` puts it in the open chunk's
+/// pending buffer. Without that order the rejected record still reaches the
+/// buffer, the next flush makes it durable, and `RaftLog::open` then replays it
+/// and fails with the very error that rejected it.
+#[test]
+fn test_rejected_write_leaves_log_unchanged() -> Result<(), io::Error> {
+    let ctx = TestContext::new()?;
+
+    let logs = [((1, 0), ss("hi")), ((1, 1), ss("hello"))];
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        rl.append(logs.clone())?;
+        rl.save_vote((3, 3))?;
+        rl.commit((1, 1))?;
+
+        // Index 1 is taken, so this append is a log id reversal.
+        let err = rl.append([((1, 1), ss("poison"))]).unwrap_err();
+        let want = "Log id cannot be reversed when append: current (1, 1), attempted (1, 1)";
+        assert_eq!(want, err.to_string());
+
+        let err = rl.save_vote((2, 2)).unwrap_err();
+        let want = "Vote cannot be reversed: current (3, 3), attempted (2, 2)";
+        assert_eq!(want, err.to_string());
+
+        let err = rl.commit((1, 0)).unwrap_err();
+        let want = "Log id cannot be reversed when commit: current (1, 1), attempted (1, 0)";
+        assert_eq!(want, err.to_string());
+
+        let got = rl.read(0, 10).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(logs.to_vec(), got);
+
+        let state = rl.log_state();
+        assert_eq!(state, &RaftLogState {
+            vote: Some((3, 3)),
+            last: Some((1, 1)),
+            committed: Some((1, 1)),
+            ..RaftLogState::default()
+        });
+
+        blocking_flush(&mut rl)?;
+    }
+    {
+        let rl = ctx.new_raft_log()?;
+
+        let state = rl.log_state();
+        assert_eq!(state, &RaftLogState {
+            vote: Some((3, 3)),
+            last: Some((1, 1)),
+            committed: Some((1, 1)),
+            ..RaftLogState::default()
+        });
+
+        let got = rl.read(0, 10).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(logs.to_vec(), got);
+    }
+
+    Ok(())
+}
+
 /// A purge boundary must name the log id that is already stored at its index.
 ///
 /// The rejected call must also leave the log untouched and usable: the check

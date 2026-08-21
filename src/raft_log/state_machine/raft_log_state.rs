@@ -123,25 +123,51 @@ impl<T: Types> RaftLogState<T> {
         self.last = log_id;
     }
 
-    pub(crate) fn apply(
-        &mut self,
+    /// Verify that `rec` can be applied to this state, without changing it.
+    ///
+    /// [`Self::apply`] runs this first, so applying an accepted record never
+    /// fails halfway.
+    pub(crate) fn check(
+        &self,
         rec: &RaftLogRecord<T>,
     ) -> Result<(), RaftLogStateError<T>> {
         match rec {
             WALRecord::Action(RaftLogAction::SaveVote(vote)) => {
-                self.update_vote(vote)?;
+                self.check_vote(vote)
             }
             WALRecord::Action(RaftLogAction::Append(log_id, _payload)) => {
-                self.append(log_id)?;
+                self.check_append(log_id)
             }
             WALRecord::Action(RaftLogAction::Commit(log_id)) => {
-                self.commit(log_id)?;
+                self.check_commit(log_id)
+            }
+            WALRecord::Action(RaftLogAction::TruncateAfter(_log_id)) => Ok(()),
+            WALRecord::Action(RaftLogAction::PurgeUpto(_log_id)) => Ok(()),
+            WALRecord::Checkpoint(_state) => Ok(()),
+        }
+    }
+
+    pub(crate) fn apply(
+        &mut self,
+        rec: &RaftLogRecord<T>,
+    ) -> Result<(), RaftLogStateError<T>> {
+        self.check(rec)?;
+
+        match rec {
+            WALRecord::Action(RaftLogAction::SaveVote(vote)) => {
+                self.vote = Some(vote.clone());
+            }
+            WALRecord::Action(RaftLogAction::Append(log_id, _payload)) => {
+                self.last = Some(log_id.clone());
+            }
+            WALRecord::Action(RaftLogAction::Commit(log_id)) => {
+                self.committed = Some(log_id.clone());
             }
             WALRecord::Action(RaftLogAction::TruncateAfter(log_id)) => {
-                self.truncate_after(log_id.as_ref())?;
+                self.truncate_after(log_id.as_ref());
             }
             WALRecord::Action(RaftLogAction::PurgeUpto(log_id)) => {
-                self.purge(log_id)?;
+                self.purge(log_id);
             }
             WALRecord::Checkpoint(state) => {
                 *self = state.clone();
@@ -150,86 +176,70 @@ impl<T: Types> RaftLogState<T> {
         Ok(())
     }
 
-    pub(crate) fn update_vote(
-        &mut self,
-        vote: &T::Vote,
-    ) -> Result<(), RaftLogStateError<T>> {
+    fn check_vote(&self, vote: &T::Vote) -> Result<(), RaftLogStateError<T>> {
         if Some(vote) >= self.vote.as_ref() {
-            self.vote = Some(vote.clone());
-        } else {
-            return Err(VoteReversal::new(
-                self.vote.clone().unwrap(),
-                vote.clone(),
-            )
-            .into());
+            return Ok(());
         }
-        Ok(())
+
+        let err = VoteReversal::new(self.vote.clone().unwrap(), vote.clone());
+        Err(err.into())
     }
 
-    pub(crate) fn append(
-        &mut self,
+    fn check_append(
+        &self,
         log_id: &T::LogId,
     ) -> Result<(), RaftLogStateError<T>> {
         if Some(log_id) <= self.last.as_ref() {
-            return Err(LogIdReversal::new(
+            let err = LogIdReversal::new(
                 self.last.clone().unwrap(),
                 log_id.clone(),
                 "append",
-            )
-            .into());
+            );
+            return Err(err.into());
         }
 
         // Do not check for consecutive log_id if last is None;
         // Because it's common to append the first log with non-zero index,
         // such as, when restoring a RaftLog.
-        if self.last.is_some() {
-            let expected = T::next_log_index(self.last.as_ref());
-            let this_index = T::log_index(log_id);
-
-            if expected != this_index {
-                return Err(LogIdNonConsecutive::new(
-                    self.last.clone(),
-                    log_id.clone(),
-                )
-                .into());
-            }
+        if self.last.is_none() {
+            return Ok(());
         }
 
-        self.last = Some(log_id.clone());
+        let expected = T::next_log_index(self.last.as_ref());
+        let this_index = T::log_index(log_id);
+
+        if expected != this_index {
+            let err =
+                LogIdNonConsecutive::new(self.last.clone(), log_id.clone());
+            return Err(err.into());
+        }
+
         Ok(())
     }
 
-    pub(crate) fn commit(
-        &mut self,
+    fn check_commit(
+        &self,
         log_id: &T::LogId,
     ) -> Result<(), RaftLogStateError<T>> {
         if Some(log_id) < self.committed.as_ref() {
-            return Err(LogIdReversal::new(
+            let err = LogIdReversal::new(
                 self.committed.clone().unwrap(),
                 log_id.clone(),
                 "commit",
-            )
-            .into());
+            );
+            return Err(err.into());
         }
 
-        self.committed = Some(log_id.clone());
         Ok(())
     }
 
-    pub(crate) fn truncate_after(
-        &mut self,
-        log_id: Option<&T::LogId>,
-    ) -> Result<(), RaftLogStateError<T>> {
+    fn truncate_after(&mut self, log_id: Option<&T::LogId>) {
         if self.last.as_ref() > log_id {
             self.last = log_id.cloned();
         }
-        Ok(())
     }
 
-    pub(crate) fn purge(
-        &mut self,
-        log_id: &T::LogId,
-    ) -> Result<(), RaftLogStateError<T>> {
+    fn purge(&mut self, log_id: &T::LogId) {
         let purged = Some(log_id.clone());
 
         if self.purged < purged {
@@ -239,7 +249,6 @@ impl<T: Types> RaftLogState<T> {
         if purged > self.last {
             self.last = purged;
         }
-        Ok(())
     }
 }
 
