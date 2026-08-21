@@ -16,7 +16,7 @@
 //!
 //! ## Example
 //!
-//! See [basic usage example](https://github.com/datafuselabs/openraft/blob/main/examples/basic_usage.rs)
+//! See [basic usage example](https://github.com/drmingdrmer/raft-log/blob/main/examples/basic_usage.rs)
 //! for a complete demonstration of core functionality, including:
 //!
 //! Basic usage:

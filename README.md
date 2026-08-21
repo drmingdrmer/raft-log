@@ -30,19 +30,36 @@ See [basic usage example](examples/basic_usage.rs) for a complete demonstration 
 Basic usage:
 
 ```rust
-use raft_log::{RaftLog, Config};
+use std::io;
+use std::sync::Arc;
+use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::sync_channel;
+
+use raft_log::api::raft_log_writer::RaftLogWriter;
+use raft_log::{Config, RaftLog, Types};
 
 // Define your application-specific types
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct MyTypes;
+
 impl Types for MyTypes {
     type LogId = (u64, u64);        // (term, index)
-    type LogPayload = String;        // Log entry data
+    type LogPayload = String;       // Log entry data
     type Vote = (u64, u64);         // (term, voted_for)
     type UserData = String;         // Custom user data
     type Callback = SyncSender<io::Result<()>>;
+
+    fn log_index(log_id: &Self::LogId) -> u64 {
+        log_id.1
+    }
+
+    fn payload_size(payload: &Self::LogPayload) -> u64 {
+        payload.len() as u64
+    }
 }
 
 // Open a RaftLog instance
-let config = Arc::new(Config::default());
+let config = Arc::new(Config::new("/path/to/raft-log-dir"));
 let mut raft_log = RaftLog::<MyTypes>::open(config)?;
 
 // Save vote information
@@ -60,12 +77,18 @@ raft_log.commit((1, 2))?;
 
 // Flush changes to disk with callback
 let (tx, rx) = sync_channel(1);
-raft_log.flush(tx)?;
+raft_log.flush(true, Some(tx))?;
 rx.recv().unwrap()?;
 ```
 
-For more examples and detailed documentation, see the [examples directory](examples/).
+## Architecture
+
+[docs/architecture.md](docs/architecture.md) describes the on-disk layout, the
+write and read paths, and the split between this crate and
+[chunked-wal](https://crates.io/crates/chunked-wal), which owns the chunked
+write-ahead log underneath.
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.
