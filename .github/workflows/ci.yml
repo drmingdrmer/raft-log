@@ -11,98 +11,58 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        include:
-          - toolchain: "nightly"
-
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@v2
-
+        uses: actions/checkout@v4
 
       - name: Setup | Toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: "${{ matrix.toolchain }}"
-          override: true
-
+        run: |
+          rustup toolchain install "$(cat rust-toolchain)"
+          rustup show
 
       - name: Build | Release Mode
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
-
+        run: cargo build --release
 
   unittest:
+    name: Test
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - toolchain: "nightly"
-            features: ""
 
     steps:
       - name: Setup | Checkout
-        uses: actions/checkout@v2
-
+        uses: actions/checkout@v4
 
       - name: Setup | Toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: "${{ matrix.toolchain }}"
-          override: true
-
+        run: |
+          rustup toolchain install "$(cat rust-toolchain)"
+          rustup show
 
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --features "${{ matrix.features }}"
+        run: cargo test
         env:
           RUST_LOG: debug
           RUST_BACKTRACE: full
 
-
   lint:
     name: lint
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1.0.6
-        with:
-          components: rustfmt, clippy
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup | Toolchain
+        run: |
+          rustup toolchain install "$(cat rust-toolchain)" \
+            --component rustfmt --component clippy
+          rustup show
 
       - name: Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
+        run: cargo fmt --all -- --check
 
       - name: clippy
-        shell: bash
-        run: |
-          cargo clippy --no-deps --workspace --all-targets                -- -D warnings
-
+        run: cargo clippy --no-deps --workspace --all-targets -- -D warnings
 
       - name: Build-doc
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --all --no-deps
+        run: cargo doc --all --no-deps
         env:
           RUSTDOCFLAGS: "-D warnings"
-
-
-      # - shell: bash
-      #   run: cargo install cargo-audit
-
-
-      # - name: Audit dependencies
-      #   shell: bash
-      #   # if: "!contains(github.event.head_commit.message, 'skip audit')"
-      #   run: cargo audit --db ./target/advisory-db
