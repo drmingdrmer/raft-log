@@ -88,7 +88,16 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
         let log_id = if index == T::next_log_index(purged) {
             purged.cloned()
         } else {
-            let log_id = self.get_log_id(index - 1)?;
+            // Reaching here with `index == 0` means the log starts above index
+            // 0, so the entry this call would keep is already purged. Without
+            // the guard `index - 1` underflows: it panics in a debug build and
+            // wraps to `u64::MAX` in a release build.
+            let Some(prev_index) = index.checked_sub(1) else {
+                let err = LogIndexNotFound::new(index);
+                return Err(RaftLogStateError::<T>::from(err).into());
+            };
+
+            let log_id = self.get_log_id(prev_index)?;
             Some(log_id)
         };
 

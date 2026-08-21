@@ -252,6 +252,29 @@ fn test_truncate_non_existent() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// `truncate(0)` on a log whose entries start above index 0 must return an
+/// error. The index it would keep is already purged, and computing it used to
+/// underflow: a debug build panicked, a release build wrapped to `u64::MAX`.
+#[test]
+fn test_truncate_zero_below_purged() -> Result<(), io::Error> {
+    let (_ctx, mut rl) = new_testing()?;
+
+    rl.append([((1, 0), ss("hello")), ((1, 1), ss("world"))])?;
+    rl.purge((1, 0))?;
+
+    let err = rl.truncate(0).unwrap_err();
+    assert_eq!("Log not found at index 0", err.to_string());
+
+    let state = rl.log_state();
+    assert_eq!(state, &RaftLogState {
+        last: Some((1, 1)),
+        purged: Some((1, 0)),
+        ..RaftLogState::default()
+    });
+
+    Ok(())
+}
+
 #[test]
 fn test_purge() -> Result<(), io::Error> {
     let (_ctx, mut rl) = new_testing()?;
