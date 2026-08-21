@@ -231,14 +231,30 @@ impl<T: Types> RaftLog<T> {
         Ok(s)
     }
 
-    /// Update the RaftLog state.
+    /// Replace the RaftLog state and append the new state to the WAL as a
+    /// checkpoint.
     ///
-    /// This method updates the RaftLog state with a new state and appends it
-    /// to the WAL.
+    /// `state` must describe the log entries this store holds, which are
+    /// exactly the entries in `(purged, last]`. A store whose log is empty
+    /// accepts any state, which is what restoring from a snapshot needs. Any
+    /// other state is rejected, because storing it would leave [`Self::read`]
+    /// serving entries the state calls purged, or hiding entries the state
+    /// calls present.
+    ///
+    /// So `vote`, `committed` and `user_data` are free to change here, while
+    /// `last` and `purged` are not once the log holds an entry. To change only
+    /// `user_data`, call [`RaftLogWriter::save_user_data`], which carries the
+    /// log fields over unchanged.
     pub fn update_state(
         &mut self,
         state: RaftLogState<T>,
     ) -> Result<Segment, io::Error> {
+        // Check before the record reaches the WAL buffer. `append_and_apply`
+        // writes the record first and applies it second, so a state rejected
+        // there would still be fsynced by the next flush, leaving a log that
+        // cannot be reopened.
+        self.state_machine.check_checkpoint(&state)?;
+
         let record = RaftLogRecord::Checkpoint(state);
         self.append_and_apply(&record)
     }

@@ -940,6 +940,8 @@ fn test_on_disk_size() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// `update_state` may change `vote`, `committed` and `user_data` freely, but it
+/// must keep `last` and `purged` describing the entries the log holds.
 #[test]
 fn test_update_state() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;
@@ -951,38 +953,80 @@ fn test_update_state() -> Result<(), io::Error> {
     {
         let mut rl = ctx.new_raft_log()?;
         sample_data::build_sample_data_purge_upto_3(&mut rl)?;
-        rl.update_state(RaftLogState {
-            vote: Some((1, 2)),
-            last: Some((3, 4)),
-            committed: None,
-            purged: None,
-            user_data: None,
-        })?;
 
-        assert_eq!(rl.log_state(), &RaftLogState {
+        // The log holds `(2,4)..=(2,7)`. This state moves `last` down to
+        // index 4 and forgets the purge, so it describes a different log.
+        let rejected = rl.update_state(RaftLogState {
             vote: Some((1, 2)),
             last: Some((3, 4)),
             committed: None,
             purged: None,
             user_data: None,
         });
+        let err = rejected.unwrap_err();
+        let want = "Checkpoint does not match the stored log: the log holds (2, 4)..=(2, 7), the checkpoint declares purged None and last Some((3, 4))";
+        assert_eq!(want, err.to_string());
+
+        assert_eq!(rl.log_state(), &RaftLogState {
+            vote: None,
+            last: Some((2, 7)),
+            committed: Some((1, 2)),
+            purged: Some((2, 3)),
+            user_data: None,
+        });
+
+        rl.update_state(RaftLogState {
+            vote: Some((1, 2)),
+            last: Some((2, 7)),
+            committed: None,
+            purged: Some((2, 3)),
+            user_data: Some(ss("restored")),
+        })?;
 
         blocking_flush(&mut rl)?;
-
-        let dump = rl.dump().write_to_string()?;
-        println!("{}", dump);
     }
 
     {
         let rl = ctx.new_raft_log()?;
         assert_eq!(rl.log_state(), &RaftLogState {
             vote: Some((1, 2)),
-            last: Some((3, 4)),
+            last: Some((2, 7)),
             committed: None,
-            purged: None,
-            user_data: None,
+            purged: Some((2, 3)),
+            user_data: Some(ss("restored")),
         });
+
+        let got = rl.read(0, 10).collect::<Result<Vec<_>, io::Error>>()?;
+        let want = vec![
+            ((2, 4), ss("world")),
+            ((2, 5), ss("foo")),
+            ((2, 6), ss("bar")),
+            ((2, 7), ss("wow")),
+        ];
+        assert_eq!(want, got);
     }
+    Ok(())
+}
+
+/// A store whose log is empty accepts any state, which is how a caller
+/// restores from a snapshot that starts above index 0.
+#[test]
+fn test_update_state_on_empty_log_accepts_any_state() -> Result<(), io::Error> {
+    let (_ctx, mut rl) = new_testing()?;
+
+    rl.update_state(RaftLogState {
+        vote: Some((3, 1)),
+        last: Some((3, 9)),
+        committed: Some((3, 9)),
+        purged: Some((3, 9)),
+        user_data: Some(ss("from-snapshot")),
+    })?;
+
+    rl.append([((3, 10), ss("after"))])?;
+
+    let got = rl.read(0, 20).collect::<Result<Vec<_>, io::Error>>()?;
+    assert_eq!(vec![((3, 10), ss("after"))], got);
+
     Ok(())
 }
 

@@ -20,6 +20,9 @@ pub enum RaftLogStateError<T: Types> {
     LogIdIndexDisorder(#[from] LogIdIndexDisorder<T>),
 
     #[error(transparent)]
+    CheckpointLogMismatch(#[from] CheckpointLogMismatch<T>),
+
+    #[error(transparent)]
     LogIndexNotFound(#[from] LogIndexNotFound),
 }
 
@@ -117,6 +120,41 @@ impl<T: Types> LogIdIndexDisorder<T> {
             stored,
             attempted,
             when,
+        }
+    }
+}
+
+/// Error indicating that a checkpoint declares a log range other than the one
+/// the store holds.
+///
+/// A checkpoint states that the log is exactly the entries in
+/// `(purged, last]`. Storing a checkpoint that says otherwise would leave
+/// reads serving entries the state calls purged, or hiding entries the state
+/// calls present.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error)]
+#[error(
+    "Checkpoint does not match the stored log: the log holds {first:?}..={last:?}, the checkpoint declares purged {purged:?} and last {declared_last:?}"
+)]
+pub struct CheckpointLogMismatch<T: Types> {
+    pub first: T::LogId,
+    pub last: T::LogId,
+    pub purged: Option<T::LogId>,
+    pub declared_last: Option<T::LogId>,
+}
+
+impl<T: Types> CheckpointLogMismatch<T> {
+    pub fn new(
+        first: T::LogId,
+        last: T::LogId,
+        purged: Option<T::LogId>,
+        declared_last: Option<T::LogId>,
+    ) -> Self {
+        Self {
+            first,
+            last,
+            purged,
+            declared_last,
         }
     }
 }

@@ -13,6 +13,7 @@ use crate::Types;
 use crate::WALRecord;
 use crate::WalTypes;
 use crate::api::state_machine::StateMachine;
+use crate::errors::CheckpointLogMismatch;
 use crate::errors::LogIdIndexDisorder;
 use crate::errors::RaftLogStateError;
 use crate::raft_log::log_data::LogData;
@@ -60,6 +61,55 @@ impl<T: Types> RaftLogStateMachine<T> {
         Self::check_index_order(upto, self.log_state.purged.as_ref())?;
         Self::check_index_order(upto, self.log_state.last.as_ref())?;
         Ok(())
+    }
+
+    /// Verify that `state` describes the log entries this store actually
+    /// holds.
+    ///
+    /// A checkpoint declares the log to be exactly the entries in
+    /// `(purged, last]`. The log map is contiguous, so that reduces to two
+    /// conditions: its first entry sits right after `purged`, and its last
+    /// entry equals `last`.
+    ///
+    /// An empty log map matches any state. That is what a store restored from
+    /// a snapshot needs, because it declares its state before it holds a
+    /// single entry.
+    ///
+    /// Only a live store can be checked this way, so [`RaftLog::update_state`]
+    /// is the sole caller and [`StateMachine::apply`] does not run this. A
+    /// chunk-leading checkpoint carries the `purged` of the moment its chunk
+    /// was created; a later purge then deletes chunks, so on replay the map
+    /// legitimately lacks entries that the older checkpoint still counts as
+    /// live. Replay cannot tell that apart from a checkpoint that was wrong
+    /// when written.
+    pub(crate) fn check_checkpoint(
+        &self,
+        state: &RaftLogState<T>,
+    ) -> Result<(), RaftLogStateError<T>> {
+        let Some((_, first)) = self.log.first_key_value() else {
+            return Ok(());
+        };
+        let (_, last) = self.log.last_key_value().unwrap();
+
+        let purged = state.purged.as_ref();
+        let first_index = T::log_index(&first.log_id);
+        let index_after_purged = T::next_log_index(purged);
+
+        let starts_at_right_index = first_index == index_after_purged;
+        let starts_above_purged = Some(&first.log_id) > purged;
+        let ends_at_last = Some(&last.log_id) == state.last.as_ref();
+
+        if starts_at_right_index && starts_above_purged && ends_at_last {
+            return Ok(());
+        }
+
+        let err = CheckpointLogMismatch::new(
+            first.log_id.clone(),
+            last.log_id.clone(),
+            state.purged.clone(),
+            state.last.clone(),
+        );
+        Err(err.into())
     }
 
     /// Require `attempted` and `stored` to order the same way by log id and by
