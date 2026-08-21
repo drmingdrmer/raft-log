@@ -17,6 +17,9 @@ pub enum RaftLogStateError<T: Types> {
     LogIdNonConsecutive(#[from] LogIdNonConsecutive<T>),
 
     #[error(transparent)]
+    LogIdIndexDisorder(#[from] LogIdIndexDisorder<T>),
+
+    #[error(transparent)]
     LogIndexNotFound(#[from] LogIndexNotFound),
 }
 
@@ -83,6 +86,38 @@ pub struct LogIdNonConsecutive<T: Types> {
 impl<T: Types> LogIdNonConsecutive<T> {
     pub fn new(last: Option<T::LogId>, attempted: T::LogId) -> Self {
         Self { last, attempted }
+    }
+}
+
+/// Error indicating that a log id disagrees with the log id already stored at
+/// the same or a nearby index.
+///
+/// A Raft log stores a greater log id at a greater index, so log id order and
+/// index order must always agree. A pair that orders one way by log id and the
+/// other way by index describes a log that was never written, which means the
+/// caller and this log disagree about history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error)]
+#[error(
+    "Log id conflicts with the stored log id when {when}: stored {stored:?}, attempted {attempted:?}; log id order and log index order must agree"
+)]
+pub struct LogIdIndexDisorder<T: Types> {
+    pub stored: T::LogId,
+    pub attempted: T::LogId,
+    pub when: &'static str,
+}
+
+impl<T: Types> LogIdIndexDisorder<T> {
+    pub fn new(
+        stored: T::LogId,
+        attempted: T::LogId,
+        when: &'static str,
+    ) -> Self {
+        Self {
+            stored,
+            attempted,
+            when,
+        }
     }
 }
 

@@ -349,6 +349,65 @@ fn test_purge() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// A purge boundary must name the log id that is already stored at its index.
+///
+/// The rejected call must also leave the log untouched and usable: the check
+/// runs before the record enters the WAL buffer, so nothing is left behind for
+/// a later flush to make durable.
+#[test]
+fn test_purge_rejects_log_id_conflicting_with_stored_log()
+-> Result<(), io::Error> {
+    let ctx = TestContext::new()?;
+
+    let logs = [
+        //
+        ((1, 0), ss("hi")),
+        ((1, 1), ss("hello")),
+        ((2, 2), ss("world")),
+        ((2, 3), ss("foo")),
+    ];
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+        rl.append(logs.clone())?;
+
+        // Index 1 stores `(1, 1)`, so term 3 at that index is not this log.
+        let err = rl.purge((3, 1)).unwrap_err();
+        let want = "Log id conflicts with the stored log id when purge: stored (1, 1), attempted (3, 1); log id order and log index order must agree";
+        assert_eq!(want, err.to_string());
+
+        // Index 2 stores `(2, 2)`. This boundary is below `last` by log id and
+        // by index alike, so only the stored log id can reject it.
+        let err = rl.purge((1, 2)).unwrap_err();
+        let want = "Log id conflicts with the stored log id when purge: stored (2, 2), attempted (1, 2); log id order and log index order must agree";
+        assert_eq!(want, err.to_string());
+
+        let state = rl.log_state();
+        assert_eq!(state, &RaftLogState {
+            last: Some((2, 3)),
+            ..RaftLogState::default()
+        });
+
+        rl.purge((2, 2))?;
+        blocking_flush(&mut rl)?;
+    }
+    {
+        let rl = ctx.new_raft_log()?;
+
+        let state = rl.log_state();
+        assert_eq!(state, &RaftLogState {
+            last: Some((2, 3)),
+            purged: Some((2, 2)),
+            ..RaftLogState::default()
+        });
+
+        let got = rl.read(0, 10).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(logs[3..=3].to_vec(), got);
+    }
+
+    Ok(())
+}
+
 /// When reopened, the purge state should be restored
 #[test]
 fn test_purge_reopen() -> Result<(), io::Error> {

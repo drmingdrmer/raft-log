@@ -105,6 +105,12 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             upto, purged
         );
 
+        // Check before the record reaches the WAL buffer. `append_and_apply`
+        // writes the record first and applies it second, so a boundary
+        // rejected there would still be sitting in the buffer and would be
+        // fsynced by the next flush, leaving a log that cannot be reopened.
+        self.state_machine.check_purge(&upto)?;
+
         if T::log_index(&upto) < T::next_log_index(purged) {
             return Ok(self.wal.last_segment());
         }
