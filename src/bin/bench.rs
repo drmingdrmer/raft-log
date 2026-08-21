@@ -97,7 +97,6 @@ fn test_bench_raft_log() -> Result<(), io::Error> {
     //     rx.recv().unwrap()?;
     // }
 
-    sleep(Duration::from_secs(86400));
     Ok(())
 }
 

@@ -1,8 +1,6 @@
 use std::io;
 use std::io::Write;
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
 
 use goldenfile::Mint;
 use raft_log::Config;
@@ -124,7 +122,7 @@ fn test_massive_load() -> std::io::Result<()> {
         let stat = log.stat();
         writeln!(file, "sync done: {:#}", stat)?;
 
-        sleep(Duration::from_millis(200));
+        log.wait_worker_idle()?;
     }
 
     Ok(())

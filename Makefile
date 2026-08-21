@@ -23,7 +23,7 @@ doc:
 	RUSTDOCFLAGS="-D warnings" cargo doc --all --no-deps
 
 bench:
-	cargo test --release -- --ignored
+	cargo test --release --bin raft-log-bench -- --ignored --nocapture
 
 coverage:
 	cargo llvm-cov --workspace --all-targets \

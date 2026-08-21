@@ -1,6 +1,5 @@
 use std::io;
 use std::sync::mpsc::sync_channel;
-use std::thread::sleep;
 use std::time::Duration;
 
 use chunked_wal::wal::FlushStat;
@@ -527,7 +526,7 @@ fn test_purge_removes_chunks() -> Result<(), io::Error> {
         rl.purge((2, 3))?;
         blocking_flush(&mut rl)?;
 
-        sleep(Duration::from_secs(1));
+        rl.wait_worker_idle()?;
 
         let dump = rl.dump().write_to_string()?;
         println!("After purge:\n{}", dump);

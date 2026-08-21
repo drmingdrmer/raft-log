@@ -7,8 +7,6 @@
 //! conditions.
 
 use std::io;
-use std::thread::sleep;
-use std::time::Duration;
 
 use indoc::indoc;
 use pretty_assertions::assert_eq;
@@ -47,8 +45,8 @@ pub fn build_sample_data_purge_upto_3(
 
     assert_eq!(dumped, dump);
 
-    // Wait for FlushWorker to quit and remove purged chunks
-    sleep(Duration::from_millis(100));
+    // The worker still has the chunk removal queued behind the purge sync.
+    rl.wait_worker_idle()?;
 
     Ok(dumped.to_string())
 }
