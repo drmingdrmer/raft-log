@@ -569,6 +569,72 @@ fn test_commit() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// A commit marks an entry the log already holds, so it can never be past
+/// `last`. Accepting one would leave `committed` naming an index the log does
+/// not reach, and `check_truncate` would then have no boundary it could honor.
+#[test]
+fn test_commit_beyond_last() -> Result<(), io::Error> {
+    let (_ctx, mut rl) = new_testing()?;
+
+    let err = rl.commit((1, 100)).unwrap_err();
+    let want = "Log id is beyond the last log id when commit: last None, attempted (1, 100)";
+    assert_eq!(want, err.to_string());
+
+    rl.append([((1, 0), ss("hi")), ((1, 1), ss("hello"))])?;
+
+    let err = rl.commit((1, 2)).unwrap_err();
+    let want = "Log id is beyond the last log id when commit: last Some((1, 1)), attempted (1, 2)";
+    assert_eq!(want, err.to_string());
+
+    rl.commit((1, 1))?;
+
+    let state = rl.log_state();
+    assert_eq!(state, &RaftLogState {
+        last: Some((1, 1)),
+        committed: Some((1, 1)),
+        ..RaftLogState::default()
+    });
+
+    Ok(())
+}
+
+/// A committed entry is agreed by a quorum, so no truncation may take it back.
+#[test]
+fn test_truncate_keeps_committed() -> Result<(), io::Error> {
+    let (_ctx, mut rl) = new_testing()?;
+
+    let logs = [
+        //
+        ((1, 0), ss("hi")),
+        ((1, 1), ss("hello")),
+        ((1, 2), ss("world")),
+    ];
+    rl.append(logs.clone())?;
+    rl.commit((1, 1))?;
+
+    // Truncating at index 1 would keep only `(1, 0)` and drop committed
+    // `(1, 1)`.
+    let err = rl.truncate(1).unwrap_err();
+    let want = "Truncation would remove committed logs: committed (1, 1), attempted to keep upto Some((1, 0))";
+    assert_eq!(want, err.to_string());
+
+    // Truncating at index 2 keeps `(1, 1)`, which is exactly the committed
+    // boundary.
+    rl.truncate(2)?;
+
+    let state = rl.log_state();
+    assert_eq!(state, &RaftLogState {
+        last: Some((1, 1)),
+        committed: Some((1, 1)),
+        ..RaftLogState::default()
+    });
+
+    let got = rl.read(0, 10).collect::<Result<Vec<_>, io::Error>>()?;
+    assert_eq!(logs[..2].to_vec(), got);
+
+    Ok(())
+}
+
 #[test]
 fn test_purge_removes_chunks() -> Result<(), io::Error> {
     let mut ctx = TestContext::new()?;

@@ -79,10 +79,15 @@ fn test_massive_load() -> std::io::Result<()> {
                 log.save_vote((log_index, 1u64))?;
             }
 
-            // Truncate the log
+            // Truncate the log, never below the committed index: a committed
+            // entry is agreed by a quorum and can never be taken back.
             if i % 29 == 0 {
-                log.truncate(log_index - 5)?;
-                log_index -= 6;
+                let committed = log.log_state().committed();
+                let lowest = committed.map_or(0, |log_id| log_id.1 + 1);
+                let truncate_at = std::cmp::max(log_index - 5, lowest);
+
+                log.truncate(truncate_at)?;
+                log_index = truncate_at - 1;
             }
 
             // Read and verify periodically

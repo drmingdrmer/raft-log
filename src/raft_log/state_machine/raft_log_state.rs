@@ -7,9 +7,11 @@ use display_more::DisplayOptionExt;
 use crate::RaftLogRecord;
 use crate::WALRecord;
 use crate::api::types::Types;
+use crate::errors::CommitBeyondLast;
 use crate::errors::LogIdNonConsecutive;
 use crate::errors::LogIdReversal;
 use crate::errors::RaftLogStateError;
+use crate::errors::TruncateCommitted;
 use crate::errors::VoteReversal;
 use crate::raft_log::raft_log_action::RaftLogAction;
 
@@ -141,7 +143,9 @@ impl<T: Types> RaftLogState<T> {
             WALRecord::Action(RaftLogAction::Commit(log_id)) => {
                 self.check_commit(log_id)
             }
-            WALRecord::Action(RaftLogAction::TruncateAfter(_log_id)) => Ok(()),
+            WALRecord::Action(RaftLogAction::TruncateAfter(log_id)) => {
+                self.check_truncate(log_id.as_ref())
+            }
             WALRecord::Action(RaftLogAction::PurgeUpto(_log_id)) => Ok(()),
             WALRecord::Checkpoint(_state) => Ok(()),
         }
@@ -230,7 +234,29 @@ impl<T: Types> RaftLogState<T> {
             return Err(err.into());
         }
 
+        if Some(log_id) > self.last.as_ref() {
+            let err = CommitBeyondLast::new(self.last.clone(), log_id.clone());
+            return Err(err.into());
+        }
+
         Ok(())
+    }
+
+    /// `keep_upto` is the last entry the truncation keeps, so `None` means it
+    /// keeps nothing.
+    fn check_truncate(
+        &self,
+        keep_upto: Option<&T::LogId>,
+    ) -> Result<(), RaftLogStateError<T>> {
+        if keep_upto >= self.committed.as_ref() {
+            return Ok(());
+        }
+
+        let err = TruncateCommitted::new(
+            self.committed.clone().unwrap(),
+            keep_upto.cloned(),
+        );
+        Err(err.into())
     }
 
     fn truncate_after(&mut self, log_id: Option<&T::LogId>) {

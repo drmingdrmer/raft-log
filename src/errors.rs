@@ -20,6 +20,12 @@ pub enum RaftLogStateError<T: Types> {
     LogIdIndexDisorder(#[from] LogIdIndexDisorder<T>),
 
     #[error(transparent)]
+    CommitBeyondLast(#[from] CommitBeyondLast<T>),
+
+    #[error(transparent)]
+    TruncateCommitted(#[from] TruncateCommitted<T>),
+
+    #[error(transparent)]
     CheckpointLogMismatch(#[from] CheckpointLogMismatch<T>),
 
     #[error(transparent)]
@@ -120,6 +126,52 @@ impl<T: Types> LogIdIndexDisorder<T> {
             stored,
             attempted,
             when,
+        }
+    }
+}
+
+/// Error indicating that a commit names a position the log does not reach.
+///
+/// A commit marks an entry this log already holds, so it can never be past
+/// `last`. Accepting one would leave `committed` pointing at an index the log
+/// does not have, and every later truncation would have no committed boundary
+/// it could honor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error)]
+#[error(
+    "Log id is beyond the last log id when commit: last {last:?}, attempted {attempted:?}"
+)]
+pub struct CommitBeyondLast<T: Types> {
+    pub last: Option<T::LogId>,
+    pub attempted: T::LogId,
+}
+
+impl<T: Types> CommitBeyondLast<T> {
+    pub fn new(last: Option<T::LogId>, attempted: T::LogId) -> Self {
+        Self { last, attempted }
+    }
+}
+
+/// Error indicating that a truncation would remove a committed log entry.
+///
+/// A committed entry is agreed by a quorum and may already have been applied,
+/// so no later call may take it back. Truncation therefore has to stop at
+/// `committed`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error)]
+#[error(
+    "Truncation would remove committed logs: committed {committed:?}, attempted to keep upto {keep_upto:?}"
+)]
+pub struct TruncateCommitted<T: Types> {
+    pub committed: T::LogId,
+    pub keep_upto: Option<T::LogId>,
+}
+
+impl<T: Types> TruncateCommitted<T> {
+    pub fn new(committed: T::LogId, keep_upto: Option<T::LogId>) -> Self {
+        Self {
+            committed,
+            keep_upto,
         }
     }
 }
