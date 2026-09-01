@@ -14,7 +14,6 @@ use crate::WALRecord;
 use crate::WalTypes;
 use crate::api::state_machine::StateMachine;
 use crate::errors::CheckpointLogMismatch;
-use crate::errors::LogIdIndexDisorder;
 use crate::errors::RaftLogStateError;
 use crate::raft_log::log_data::LogData;
 use crate::raft_log::raft_log_action::RaftLogAction;
@@ -57,32 +56,7 @@ impl<T: Types> RaftLogStateMachine<T> {
         &self,
         rec: &RaftLogRecord<T>,
     ) -> Result<(), RaftLogStateError<T>> {
-        if let WALRecord::Action(RaftLogAction::PurgeUpto(log_id)) = rec {
-            self.check_purge(log_id)?;
-        }
-
         self.log_state.check(rec)
-    }
-
-    /// Verify that `upto` names a log id this log actually holds.
-    ///
-    /// A Raft log stores a greater log id at a greater index, so the log id
-    /// sitting at `log_index(upto)` is already determined by what was
-    /// written. When `upto` disagrees with it, the caller is purging by a log
-    /// id this log never had, and purging anyway would either drop entries the
-    /// state still counts as present or keep entries the state counts as
-    /// purged. Both leave the log permanently inconsistent, so the call is
-    /// rejected instead.
-    pub(crate) fn check_purge(
-        &self,
-        upto: &T::LogId,
-    ) -> Result<(), RaftLogStateError<T>> {
-        let stored = self.log.get(&T::log_index(upto)).map(|d| &d.log_id);
-
-        Self::check_index_order(upto, stored)?;
-        Self::check_index_order(upto, self.log_state.purged.as_ref())?;
-        Self::check_index_order(upto, self.log_state.last.as_ref())?;
-        Ok(())
     }
 
     /// Verify that `state` describes the log entries this store actually
@@ -133,34 +107,6 @@ impl<T: Types> RaftLogStateMachine<T> {
         );
         Err(err.into())
     }
-
-    /// Require `attempted` and `stored` to order the same way by log id and by
-    /// index.
-    ///
-    /// When the two indexes are equal this demands the two log ids be equal,
-    /// which is the check against the entry stored at that index.
-    fn check_index_order(
-        attempted: &T::LogId,
-        stored: Option<&T::LogId>,
-    ) -> Result<(), RaftLogStateError<T>> {
-        let Some(stored) = stored else {
-            return Ok(());
-        };
-
-        let by_log_id = attempted.cmp(stored);
-        let by_index = T::log_index(attempted).cmp(&T::log_index(stored));
-
-        if by_log_id != by_index {
-            let err = LogIdIndexDisorder::new(
-                stored.clone(),
-                attempted.clone(),
-                "purge",
-            );
-            return Err(err.into());
-        }
-
-        Ok(())
-    }
 }
 
 impl<T: Types> StateMachine<RaftWalTypes<T>> for RaftLogStateMachine<T> {
@@ -195,8 +141,6 @@ impl<T: Types> StateMachine<RaftWalTypes<T>> for RaftLogStateMachine<T> {
                 }
             }
             WALRecord::Action(RaftLogAction::PurgeUpto(log_id)) => {
-                self.check_purge(log_id)?;
-
                 let index = T::next_log_index(Some(log_id));
                 let b = self.log.split_off(&index);
                 self.log = b;
@@ -263,29 +207,6 @@ mod tests {
             },
             sm.checkpoint()
         );
-
-        Ok(())
-    }
-
-    /// Replaying a WAL that holds a purge record conflicting with the log id
-    /// stored at that index must fail, so a corrupt log is reported at
-    /// `RaftLog::open` instead of rebuilt into an inconsistent state.
-    #[test]
-    fn test_apply_rejects_purge_conflicting_with_stored_log()
-    -> Result<(), RaftLogStateError<TestTypes>> {
-        let mut sm = RaftLogStateMachine::<TestTypes>::new(&Config::default());
-        let segment = Segment::new(0, 0);
-
-        sm.apply(
-            &RaftLogRecord::Action(RaftLogAction::Append((1, 7), ss("a"))),
-            ChunkId(0),
-            segment,
-        )?;
-
-        let record = RaftLogRecord::Action(RaftLogAction::PurgeUpto((2, 7)));
-        let err = sm.apply(&record, ChunkId(0), segment).unwrap_err();
-        let want = "Log id conflicts with the stored log id when purge: stored (1, 7), attempted (2, 7); log id order and log index order must agree";
-        assert_eq!(want, err.to_string());
 
         Ok(())
     }

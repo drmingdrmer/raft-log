@@ -114,12 +114,6 @@ impl<T: Types> RaftLogWriter<T> for RaftLog<T> {
             upto, purged
         );
 
-        // `append_and_apply` checks this too, but the early return below skips
-        // it. An illegal boundary must be reported even when purging to it
-        // would be a no-op, because the caller is naming a log id this log
-        // never held.
-        self.state_machine.check_purge(&upto)?;
-
         if T::log_index(&upto) < T::next_log_index(purged) {
             return Ok(self.wal.last_segment());
         }
