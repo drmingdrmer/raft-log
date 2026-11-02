@@ -84,7 +84,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_003_823)){records: 100, [000_003_823, 000_007_734), size: 000_003_911, log_state: RaftLogState { vote: Some((130, 1)), last: Some((135, 135)), committed: Some((131, 131)), purged: Some((77, 77)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_007_734)){records: 4, [000_007_734, 000_007_942), size: 000_000_208, log_state: RaftLogState { vote: Some((130, 1)), last: Some((138, 138)), committed: Some((131, 131)), purged: Some((77, 77)), user_data: None }},
- payload_cache:{evictable: ..=(71, 71),item/max: 000_000_067 / 000_000_200,size/cap: 000_000_642 / 1_073_741_824,miss: 000_000_000,hit: 000_000_038}
+ payload_cache:{evictable: ..=None,item/max: 000_000_067 / 000_000_200,size/cap: 000_000_642 / 1_073_741_824,miss: 000_000_000,hit: 000_000_038}
 }
 ((102, 102), "data-0-102")
 ((103, 103), "data-0-103")
@@ -98,7 +98,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_003_823)){records: 100, [000_003_823, 000_007_734), size: 000_003_911, log_state: RaftLogState { vote: Some((130, 1)), last: Some((135, 135)), committed: Some((131, 131)), purged: Some((77, 77)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_007_734)){records: 33, [000_007_734, 000_009_077), size: 000_001_343, log_state: RaftLogState { vote: Some((147, 1)), last: Some((155, 155)), committed: Some((147, 147)), purged: Some((91, 91)), user_data: None }},
- payload_cache:{evictable: ..=(71, 71),item/max: 000_000_084 / 000_000_200,size/cap: 000_000_812 / 1_073_741_824,miss: 000_000_000,hit: 000_000_044}
+ payload_cache:{evictable: ..=None,item/max: 000_000_084 / 000_000_200,size/cap: 000_000_812 / 1_073_741_824,miss: 000_000_000,hit: 000_000_044}
 }
 ((114, 114), "data-0-114")
 ((115, 115), "data-0-115")
@@ -112,7 +112,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_003_823)){records: 100, [000_003_823, 000_007_734), size: 000_003_911, log_state: RaftLogState { vote: Some((130, 1)), last: Some((135, 135)), committed: Some((131, 131)), purged: Some((77, 77)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_007_734)){records: 62, [000_007_734, 000_010_212), size: 000_002_478, log_state: RaftLogState { vote: Some((170, 1)), last: Some((173, 173)), committed: Some((169, 169)), purged: Some((98, 98)), user_data: None }},
- payload_cache:{evictable: ..=(71, 71),item/max: 000_000_102 / 000_000_200,size/cap: 000_000_992 / 1_073_741_824,miss: 000_000_000,hit: 000_000_050}
+ payload_cache:{evictable: ..=None,item/max: 000_000_102 / 000_000_200,size/cap: 000_000_992 / 1_073_741_824,miss: 000_000_000,hit: 000_000_050}
 }
 ((105, 105), "data-0-105")
 ((106, 106), "data-0-106")
@@ -126,7 +126,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_003_823)){records: 100, [000_003_823, 000_007_734), size: 000_003_911, log_state: RaftLogState { vote: Some((130, 1)), last: Some((135, 135)), committed: Some((131, 131)), purged: Some((77, 77)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_007_734)){records: 90, [000_007_734, 000_011_318), size: 000_003_584, log_state: RaftLogState { vote: Some((187, 1)), last: Some((196, 196)), committed: Some((186, 186)), purged: Some((112, 112)), user_data: None }},
- payload_cache:{evictable: ..=(71, 71),item/max: 000_000_125 / 000_000_200,size/cap: 000_001_222 / 1_073_741_824,miss: 000_000_000,hit: 000_000_056}
+ payload_cache:{evictable: ..=None,item/max: 000_000_125 / 000_000_200,size/cap: 000_001_222 / 1_073_741_824,miss: 000_000_000,hit: 000_000_056}
 }
 ((191, 191), "data-0-191")
 ((192, 192), "data-0-192")
@@ -155,7 +155,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_007_734)){records: 100, [000_007_734, 000_011_697), size: 000_003_963, log_state: RaftLogState { vote: Some((187, 1)), last: Some((202, 202)), committed: Some((197, 197)), purged: Some((119, 119)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_011_697)){records: 51, [000_011_697, 000_013_726), size: 000_002_029, log_state: RaftLogState { vote: Some((231, 1)), last: Some((235, 235)), committed: Some((234, 234)), purged: Some((140, 140)), user_data: None }},
- payload_cache:{evictable: ..=(135, 135),item/max: 000_000_100 / 000_000_200,size/cap: 000_001_000 / 1_073_741_824,miss: 000_000_000,hit: 000_000_068}
+ payload_cache:{evictable: ..=None,item/max: 000_000_100 / 000_000_200,size/cap: 000_001_000 / 1_073_741_824,miss: 000_000_000,hit: 000_000_068}
 }
 ((219, 219), "data-0-219")
 ((220, 220), "data-0-220")
@@ -169,7 +169,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_007_734)){records: 100, [000_007_734, 000_011_697), size: 000_003_963, log_state: RaftLogState { vote: Some((187, 1)), last: Some((202, 202)), committed: Some((197, 197)), purged: Some((119, 119)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_011_697)){records: 80, [000_011_697, 000_014_861), size: 000_003_164, log_state: RaftLogState { vote: Some((248, 1)), last: Some((254, 254)), committed: Some((252, 252)), purged: Some((154, 154)), user_data: None }},
- payload_cache:{evictable: ..=(135, 135),item/max: 000_000_119 / 000_000_200,size/cap: 000_001_190 / 1_073_741_824,miss: 000_000_000,hit: 000_000_074}
+ payload_cache:{evictable: ..=None,item/max: 000_000_119 / 000_000_200,size/cap: 000_001_190 / 1_073_741_824,miss: 000_000_000,hit: 000_000_074}
 }
 ((162, 162), "data-0-162")
 ((163, 163), "data-0-163")
@@ -224,7 +224,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_011_697)){records: 100, [000_011_697, 000_015_659), size: 000_003_962, log_state: RaftLogState { vote: Some((261, 1)), last: Some((271, 271)), committed: Some((263, 263)), purged: Some((161, 161)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_015_659)){records: 97, [000_015_659, 000_019_482), size: 000_003_823, log_state: RaftLogState { vote: Some((337, 1)), last: Some((337, 337)), committed: Some((331, 331)), purged: Some((203, 203)), user_data: None }},
- payload_cache:{evictable: ..=(202, 202),item/max: 000_000_135 / 000_000_200,size/cap: 000_001_350 / 1_073_741_824,miss: 000_000_000,hit: 000_000_094}
+ payload_cache:{evictable: ..=None,item/max: 000_000_135 / 000_000_200,size/cap: 000_001_350 / 1_073_741_824,miss: 000_000_000,hit: 000_000_094}
 }
 ((211, 211), "data-0-211")
 ((212, 212), "data-0-212")
@@ -566,7 +566,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_039_407)){records: 100, [000_039_407, 000_043_356), size: 000_003_949, log_state: RaftLogState { vote: Some((731, 1)), last: Some((741, 741)), committed: Some((737, 737)), purged: Some((455, 455)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_043_356)){records: 2, [000_043_356, 000_043_480), size: 000_000_124, log_state: RaftLogState { vote: Some((731, 1)), last: Some((742, 742)), committed: Some((737, 737)), purged: Some((455, 455)), user_data: None }},
- payload_cache:{evictable: ..=(673, 673),item/max: 000_000_069 / 000_000_200,size/cap: 000_000_690 / 1_073_741_824,miss: 000_000_046,hit: 000_000_050}
+ payload_cache:{evictable: ..=(670, 670),item/max: 000_000_072 / 000_000_200,size/cap: 000_000_720 / 1_073_741_824,miss: 000_000_046,hit: 000_000_050}
 }
 ((483, 483), "data-1-483")
 ((484, 484), "data-1-484")
@@ -584,7 +584,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_039_407)){records: 100, [000_039_407, 000_043_356), size: 000_003_949, log_state: RaftLogState { vote: Some((731, 1)), last: Some((741, 741)), committed: Some((737, 737)), purged: Some((455, 455)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_043_356)){records: 32, [000_043_356, 000_044_643), size: 000_001_287, log_state: RaftLogState { vote: Some((762, 1)), last: Some((762, 762)), committed: Some((756, 756)), purged: Some((469, 469)), user_data: None }},
- payload_cache:{evictable: ..=(673, 673),item/max: 000_000_089 / 000_000_200,size/cap: 000_000_890 / 1_073_741_824,miss: 000_000_052,hit: 000_000_050}
+ payload_cache:{evictable: ..=(670, 670),item/max: 000_000_092 / 000_000_200,size/cap: 000_000_920 / 1_073_741_824,miss: 000_000_052,hit: 000_000_050}
 }
 ((489, 489), "data-1-489")
 ((490, 490), "data-1-490")
@@ -601,7 +601,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_039_407)){records: 100, [000_039_407, 000_043_356), size: 000_003_949, log_state: RaftLogState { vote: Some((731, 1)), last: Some((741, 741)), committed: Some((737, 737)), purged: Some((455, 455)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_043_356)){records: 60, [000_043_356, 000_045_750), size: 000_002_394, log_state: RaftLogState { vote: Some((773, 1)), last: Some((779, 779)), committed: Some((772, 772)), purged: Some((476, 476)), user_data: None }},
- payload_cache:{evictable: ..=(673, 673),item/max: 000_000_106 / 000_000_200,size/cap: 000_001_060 / 1_073_741_824,miss: 000_000_052,hit: 000_000_056}
+ payload_cache:{evictable: ..=(670, 670),item/max: 000_000_109 / 000_000_200,size/cap: 000_001_090 / 1_073_741_824,miss: 000_000_052,hit: 000_000_056}
 }
 ((699, 699), "data-1-699")
 ((700, 700), "data-1-700")
@@ -618,7 +618,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_039_407)){records: 100, [000_039_407, 000_043_356), size: 000_003_949, log_state: RaftLogState { vote: Some((731, 1)), last: Some((741, 741)), committed: Some((737, 737)), purged: Some((455, 455)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_043_356)){records: 89, [000_043_356, 000_046_885), size: 000_003_529, log_state: RaftLogState { vote: Some((790, 1)), last: Some((796, 796)), committed: Some((794, 794)), purged: Some((490, 490)), user_data: None }},
- payload_cache:{evictable: ..=(673, 673),item/max: 000_000_123 / 000_000_200,size/cap: 000_001_230 / 1_073_741_824,miss: 000_000_058,hit: 000_000_056}
+ payload_cache:{evictable: ..=(670, 670),item/max: 000_000_126 / 000_000_200,size/cap: 000_001_260 / 1_073_741_824,miss: 000_000_058,hit: 000_000_056}
 }
 ((608, 608), "data-1-608")
 ((609, 609), "data-1-609")
@@ -767,7 +767,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_051_281)){records: 100, [000_051_281, 000_055_230), size: 000_003_949, log_state: RaftLogState { vote: Some((937, 1)), last: Some((939, 939)), committed: Some((934, 934)), purged: Some((581, 581)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_055_230)){records: 13, [000_055_230, 000_055_802), size: 000_000_572, log_state: RaftLogState { vote: Some((937, 1)), last: Some((950, 950)), committed: Some((945, 945)), purged: Some((581, 581)), user_data: None }},
- payload_cache:{evictable: ..=(876, 876),item/max: 000_000_074 / 000_000_200,size/cap: 000_000_740 / 1_073_741_824,miss: 000_000_024,hit: 000_000_006}
+ payload_cache:{evictable: ..=(873, 873),item/max: 000_000_077 / 000_000_200,size/cap: 000_000_770 / 1_073_741_824,miss: 000_000_024,hit: 000_000_006}
 }
 ((780, 780), "data-1-780")
 ((781, 781), "data-1-781")
@@ -786,7 +786,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_051_281)){records: 100, [000_051_281, 000_055_230), size: 000_003_949, log_state: RaftLogState { vote: Some((937, 1)), last: Some((939, 939)), committed: Some((934, 934)), purged: Some((581, 581)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_055_230)){records: 43, [000_055_230, 000_056_965), size: 000_001_735, log_state: RaftLogState { vote: Some((965, 1)), last: Some((967, 967)), committed: Some((961, 961)), purged: Some((595, 595)), user_data: None }},
- payload_cache:{evictable: ..=(876, 876),item/max: 000_000_091 / 000_000_200,size/cap: 000_000_910 / 1_073_741_824,miss: 000_000_030,hit: 000_000_006}
+ payload_cache:{evictable: ..=(873, 873),item/max: 000_000_094 / 000_000_200,size/cap: 000_000_940 / 1_073_741_824,miss: 000_000_030,hit: 000_000_006}
 }
 ((830, 830), "data-1-830")
 ((831, 831), "data-1-831")
@@ -804,7 +804,7 @@ Stat{
   ChunkStat(ChunkId(00_000_000_000_000_051_281)){records: 100, [000_051_281, 000_055_230), size: 000_003_949, log_state: RaftLogState { vote: Some((937, 1)), last: Some((939, 939)), committed: Some((934, 934)), purged: Some((581, 581)), user_data: None }}
  ],
  open_chunk: ChunkStat(ChunkId(00_000_000_000_000_055_230)){records: 72, [000_055_230, 000_058_100), size: 000_002_870, log_state: RaftLogState { vote: Some((980, 1)), last: Some((988, 988)), committed: Some((981, 981)), purged: Some((609, 609)), user_data: None }},
- payload_cache:{evictable: ..=(876, 876),item/max: 000_000_112 / 000_000_200,size/cap: 000_001_120 / 1_073_741_824,miss: 000_000_036,hit: 000_000_006}
+ payload_cache:{evictable: ..=(873, 873),item/max: 000_000_115 / 000_000_200,size/cap: 000_001_150 / 1_073_741_824,miss: 000_000_036,hit: 000_000_006}
 }
 ((813, 813), "data-1-813")
 ((814, 814), "data-1-814")

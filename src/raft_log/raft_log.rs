@@ -2,6 +2,7 @@ use std::io;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use chunked_wal::ChunkPersisted;
 use chunked_wal::ChunkPersistedFn;
 use chunked_wal::ChunkedWal;
 use log::info;
@@ -159,8 +160,15 @@ impl<T: Types> RaftLog<T> {
     /// RaftLog state.
     pub fn dump_data(&self) -> DumpRaftLog<T> {
         let logs = self.state_machine.log.values().cloned().collect::<Vec<_>>();
-        let cache =
-            self.state_machine.payload_cache.read().unwrap().cache.clone();
+        let cache = self
+            .state_machine
+            .payload_cache
+            .read()
+            .unwrap()
+            .cache
+            .iter()
+            .map(|(log_id, cached)| (log_id.clone(), cached.payload.clone()))
+            .collect();
         let record_reader = self.wal.closed_chunk_reader();
 
         DumpRaftLog {
@@ -204,17 +212,18 @@ impl<T: Types> RaftLog<T> {
 
         let mut sm = RaftLogStateMachine::new(&config);
         let cache = sm.payload_cache.clone();
-        let on_chunk_persisted: ChunkPersistedFn<RaftWalTypes<T>> =
-            Arc::new(move |_persisted, prev_chunk_checkpoint: Option<Arc<RaftLogState<T>>>| {
-                let Some(prev_chunk_checkpoint) = prev_chunk_checkpoint else {
-                    return;
-                };
-
+        // The FlushWorker fsyncs the earlier files before the one it reports,
+        // and every chunk before the open one is closed, so every chunk before
+        // `starting_offset` is closed and persisted. `open` calls this for each
+        // chunk before replaying it, with the same meaning.
+        let on_chunk_persisted: ChunkPersistedFn<RaftWalTypes<T>> = Arc::new(
+            move |persisted: ChunkPersisted, _prev_chunk_checkpoint| {
                 cache
                     .write()
                     .unwrap()
-                    .set_last_evictable(prev_chunk_checkpoint.last().cloned());
-            });
+                    .set_evictable_before(ChunkId(persisted.starting_offset));
+            },
+        );
 
         let wal = ChunkedWal::open(wal_config, &mut sm, on_chunk_persisted)?;
 
@@ -328,11 +337,23 @@ impl<T: Types> RaftLog<T> {
             self.wal.open_chunk_stat(self.state_machine.checkpoint());
         let cache = self.state_machine.payload_cache.read().unwrap();
 
+        // Chunk ids never decrease along the log, so only the entries in
+        // chunks that are not yet persisted, usually just the open chunk, are
+        // scanned.
+        let evictable_before = cache.evictable_before();
+        let last_evictable = self
+            .state_machine
+            .log
+            .values()
+            .rev()
+            .find(|log_data| log_data.chunk_id < evictable_before)
+            .map(|log_data| log_data.log_id.clone());
+
         Stat {
             closed_chunks: closed,
             open_chunk: open_stat,
 
-            payload_cache_last_evictable: cache.last_evictable().cloned(),
+            payload_cache_last_evictable: last_evictable,
             payload_cache_item_count: cache.item_count() as u64,
             payload_cache_max_item: cache.max_items() as u64,
             payload_cache_size: cache.total_size() as u64,

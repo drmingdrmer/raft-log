@@ -168,11 +168,18 @@ Each record is serialized with a CRC32 checksum via the `codeq` framework.
 
 ## Cache Eviction
 
-`PayloadCache` holds payloads whose log id is after `last_evictable`; un-synced
-data must stay in memory. After a closed chunk's file is synced, the
-`on_chunk_persisted` callback calls `set_last_evictable(log_id)` with the last
-log id of the previous chunk's checkpoint. The cache may then evict up to that
-point once it exceeds `log_cache_max_items` or `log_cache_capacity`.
+`PayloadCache` records, for each payload, the chunk that holds its `Append`
+record, and may evict a payload only when that chunk is before
+`evictable_before`; un-synced data and the open chunk, which a cache miss
+cannot read, must stay in memory. When the `FlushWorker` syncs a chunk file,
+every chunk before it is closed and persisted, so the `on_chunk_persisted`
+callback calls `set_evictable_before(chunk_id)` with that file's chunk id. The
+cache may then evict those payloads once it exceeds `log_cache_max_items` or
+`log_cache_capacity`.
+
+The boundary is a chunk rather than a log id because a truncation can replace
+entries with ones whose log ids sort lower: a replacement in the open chunk can
+sort below a log id that is already persisted.
 
 ## Chunk Lifecycle
 

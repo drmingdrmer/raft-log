@@ -19,7 +19,8 @@ where T: Types
     pub closed_chunks: Vec<ChunkStat<RaftLogState<T>>>,
     /// Statistics for the currently open (active) chunk
     pub open_chunk: ChunkStat<RaftLogState<T>>,
-    /// The last evictable log id in the payload cache
+    /// The last log id whose record is in a closed and persisted chunk, so
+    /// the payload cache may evict it and every entry before it
     pub payload_cache_last_evictable: Option<T::LogId>,
     /// Current number of items in the payload cache
     pub payload_cache_item_count: u64,

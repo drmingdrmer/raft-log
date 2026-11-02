@@ -125,10 +125,11 @@ impl<T: Types> StateMachine<RaftWalTypes<T>> for RaftLogStateMachine<T> {
                     T::log_index(log_id),
                     LogData::new(log_id.clone(), chunk_id, segment),
                 );
-                self.payload_cache
-                    .write()
-                    .unwrap()
-                    .insert(log_id.clone(), payload.clone());
+                self.payload_cache.write().unwrap().insert(
+                    log_id.clone(),
+                    chunk_id,
+                    payload.clone(),
+                );
             }
             WALRecord::Action(RaftLogAction::Commit(_committed)) => {}
             WALRecord::Action(RaftLogAction::TruncateAfter(log_id)) => {

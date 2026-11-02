@@ -433,6 +433,57 @@ fn test_rejected_write_leaves_log_unchanged() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// An entry that replaces a truncated suffix must stay readable, before and
+/// after a reopen, even when its log id sorts below entries that were already
+/// persisted.
+///
+/// A follower meets this when a new leader overwrites an uncommitted suffix
+/// with entries from an earlier term. Here `(2, 1)` replaces `(3, 1)..=(3, 8)`,
+/// whose chunk is closed and persisted. `(2, 1)` sorts below `(3, 8)`, but its
+/// record is in the open chunk, which a cache miss cannot read back.
+#[test]
+fn test_replacement_entry_below_persisted_log_id_stays_readable()
+-> Result<(), io::Error> {
+    let mut ctx = TestContext::new()?;
+    ctx.config.wal.chunk_max_records = Some(10);
+    ctx.config.log_cache_max_items = Some(0);
+
+    let want = vec![((2, 1), ss("replacement"))];
+
+    {
+        let mut rl = ctx.new_raft_log()?;
+
+        // The leading checkpoint and these 9 entries fill the first chunk.
+        rl.append([((1, 0), ss("p0"))])?;
+        rl.append((1..=8).map(|i| ((3, i), ss(format!("p{}", i)))))?;
+
+        rl.commit((1, 0))?;
+        blocking_flush(&mut rl)?;
+        rl.wait_worker_idle()?;
+
+        rl.truncate(1)?;
+        rl.append([((2, 1), ss("replacement"))])?;
+
+        let got = rl.read(1, 2).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(want, got);
+
+        blocking_flush(&mut rl)?;
+        rl.wait_worker_idle()?;
+
+        let got = rl.read(1, 2).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(want, got);
+    }
+
+    {
+        let rl = ctx.new_raft_log()?;
+
+        let got = rl.read(1, 2).collect::<Result<Vec<_>, io::Error>>()?;
+        assert_eq!(want, got);
+    }
+
+    Ok(())
+}
+
 /// When reopened, the purge state should be restored
 #[test]
 fn test_purge_reopen() -> Result<(), io::Error> {
